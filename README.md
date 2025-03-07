@@ -12,13 +12,41 @@ The Bevy Dialogue System provides tools for creating rich, branching conversatio
 
 ## Features
 
-- Node-based dialogue creation
-- Type-safe event system
-- Rich expression system for conditions
-- Variable management with different scopes
-- Localization support
-- Customizable dialogue UI
-- Deep integration with game systems
+### Core
+
+- [ ] Dialogue asset system
+- [ ] Dialogue graph representation
+- [ ] Dialogue runtime engine
+- [ ] Node processing
+
+### Node Types
+
+- [ ] Text nodes
+- [ ] Choice nodes
+- [ ] Condition nodes
+- [ ] Action nodes
+- [ ] Jump nodes
+
+### Dialogue Logic
+
+- [ ] Expression evaluation
+- [ ] Variable system
+- [ ] Condition checking
+- [ ] Event triggering
+
+### UI System
+
+- [ ] Basic dialogue display
+- [ ] Choice selection
+- [ ] Speaker portraits
+- [ ] Text animation effects
+
+### Integration
+
+- [ ] Game state binding
+- [ ] Type-safe event system
+- [ ] Localization support
+- [ ] Editor tools
 
 ## Documentation
 
