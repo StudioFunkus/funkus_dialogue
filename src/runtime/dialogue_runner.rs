@@ -8,8 +8,7 @@ use std::collections::HashMap;
 
 use crate::asset::DialogueAsset;
 use crate::error::{DialogueError, DialogueResult};
-use crate::graph::{NodeId, NodeType};
-use crate::graph::node::DialogueNode;
+use crate::graph::{NodeId, DialogueNode};
 
 /// Current state of a dialogue.
 /// 
@@ -222,8 +221,8 @@ impl DialogueRunner {
         // Set initial state based on the start node type
         if let Some(node) = dialogue.graph.get_node(start_id) {
             match node {
-                NodeType::Text(_) => self.state = DialogueState::ShowingText,
-                NodeType::Choice(_) => self.state = DialogueState::WaitingForChoice,
+                DialogueNode::Text { .. } => self.state = DialogueState::ShowingText,
+                DialogueNode::Choice { .. } => self.state = DialogueState::WaitingForChoice,
             }
         } else {
             self.state = DialogueState::Error(format!("Start node {:?} not found", start_id));
@@ -293,10 +292,8 @@ impl DialogueRunner {
             .ok_or(DialogueError::NodeNotFound(current_id))?;
             
         match current_node {
-            NodeType::Text(text_node) => {
+            DialogueNode::Text { connections, .. } => {
                 // A text node typically has 0 or 1 connections
-                let connections = text_node.connections();
-                
                 if connections.is_empty() {
                     // End of dialogue
                     self.state = DialogueState::Finished;
@@ -310,14 +307,14 @@ impl DialogueRunner {
                 // Update state based on the next node type
                 if let Some(next_node) = dialogue.graph.get_node(next_id) {
                     match next_node {
-                        NodeType::Text(_) => self.state = DialogueState::ShowingText,
-                        NodeType::Choice(_) => self.state = DialogueState::WaitingForChoice,
+                        DialogueNode::Text { .. } => self.state = DialogueState::ShowingText,
+                        DialogueNode::Choice { .. } => self.state = DialogueState::WaitingForChoice,
                     }
                 } else {
                     return Err(DialogueError::NextNodeNotFound(next_id));
                 }
             },
-            NodeType::Choice(choice_node) => {
+            DialogueNode::Choice { connections, .. } => {
                 // For choice nodes, we need a selected choice
                 // Check if we're in the ChoiceSelected state
                 let choice_index = match self.state {
@@ -333,8 +330,6 @@ impl DialogueRunner {
                     }
                 };
                 
-                let connections = choice_node.connections();
-                
                 if choice_index >= connections.len() {
                     return Err(DialogueError::InvalidChoiceIndex(choice_index, connections.len() - 1));
                 }
@@ -349,8 +344,8 @@ impl DialogueRunner {
                 // Update state based on the next node type
                 if let Some(next_node) = dialogue.graph.get_node(next_id) {
                     match next_node {
-                        NodeType::Text(_) => self.state = DialogueState::ShowingText,
-                        NodeType::Choice(_) => self.state = DialogueState::WaitingForChoice,
+                        DialogueNode::Text { .. } => self.state = DialogueState::ShowingText,
+                        DialogueNode::Choice { .. } => self.state = DialogueState::WaitingForChoice,
                     }
                 } else {
                     return Err(DialogueError::NextNodeNotFound(next_id));
@@ -437,7 +432,7 @@ impl DialogueRunner {
     /// 
     /// ```rust
     /// # use bevy::prelude::*;
-    /// # use funkus_dialogue::{DialogueRunner, DialogueAsset, NodeType};
+    /// # use funkus_dialogue::{DialogueRunner, DialogueAsset, DialogueNode};
     /// # 
     /// fn process_current_node(
     ///     dialogue_assets: Res<Assets<DialogueAsset>>,
@@ -447,11 +442,11 @@ impl DialogueRunner {
     ///         if let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) {
     ///             if let Some(node) = runner.current_node(dialogue) {
     ///                 match node {
-    ///                     NodeType::Text(text_node) => {
-    ///                         println!("Current text: {}", text_node.text);
+    ///                     DialogueNode::Text { text, .. } => {
+    ///                         println!("Current text: {}", text);
     ///                     },
-    ///                     NodeType::Choice(choice_node) => {
-    ///                         println!("Current prompt: {:?}", choice_node.prompt);
+    ///                     DialogueNode::Choice { prompt, .. } => {
+    ///                         println!("Current prompt: {:?}", prompt);
     ///                     }
     ///                 }
     ///             }
@@ -459,7 +454,7 @@ impl DialogueRunner {
     ///     }
     /// }
     /// ```
-    pub fn current_node<'a>(&self, dialogue: &'a DialogueAsset) -> Option<&'a NodeType> {
+    pub fn current_node<'a>(&self, dialogue: &'a DialogueAsset) -> Option<&'a DialogueNode> {
         self.current_node_id.and_then(|id| dialogue.graph.get_node(id))
     }
     

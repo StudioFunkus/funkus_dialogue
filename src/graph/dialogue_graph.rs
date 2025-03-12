@@ -10,7 +10,8 @@ use std::collections::HashMap;
 use serde::{Serialize, Deserialize};
 
 use super::node::NodeId;
-use super::nodes::NodeType;
+use super::nodes::DialogueNode;
+use super::DialogueElement;
 
 /// Represents a complete dialogue graph with nodes and metadata.
 /// 
@@ -34,17 +35,17 @@ use super::nodes::NodeType;
 /// # Example
 /// 
 /// ```rust
-/// use funkus_dialogue::graph::{DialogueGraph, NodeId, NodeType, TextNode};
+/// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
 /// 
 /// // Create a new dialogue graph
 /// let mut graph = DialogueGraph::new(NodeId(1))
 ///     .with_name("My Dialogue");
 ///     
 /// // Add a text node
-/// let text_node = TextNode::new(NodeId(1), "Hello, world!")
+/// let text_node = DialogueNode::text(NodeId(1), "Hello, world!")
 ///     .with_speaker("Guide");
 ///     
-/// graph.add_node(NodeType::Text(text_node));
+/// graph.add_node(text_node);
 /// 
 /// // Validate the graph
 /// assert!(graph.validate().is_ok());
@@ -53,7 +54,7 @@ use super::nodes::NodeType;
 pub struct DialogueGraph {
     /// The underlying directed graph
     #[reflect(ignore)]
-    graph: DiGraph<NodeType, Option<String>>,
+    graph: DiGraph<DialogueNode, Option<String>>,
     /// Mapping from our NodeId to petgraph's NodeIndex
     #[reflect(ignore)]
     node_indices: HashMap<NodeId, NodeIndex>,
@@ -63,7 +64,7 @@ pub struct DialogueGraph {
     pub name: Option<String>,
     /// All nodes in the graph, indexed by their ID (kept for serialization)
     #[reflect(ignore)]
-    pub nodes: HashMap<NodeId, NodeType>,
+    pub nodes: HashMap<NodeId, DialogueNode>,
 }
 
 impl Serialize for DialogueGraph {
@@ -74,7 +75,7 @@ impl Serialize for DialogueGraph {
         // We'll serialize the old structure for compatibility
         #[derive(Serialize)]
         struct SerializableGraph<'a> {
-            nodes: &'a HashMap<NodeId, NodeType>,
+            nodes: &'a HashMap<NodeId, DialogueNode>,
             start_node: NodeId,
             name: &'a Option<String>,
         }
@@ -97,7 +98,7 @@ impl<'de> Deserialize<'de> for DialogueGraph {
         // Deserialize into the old structure first
         #[derive(Deserialize)]
         struct DeserializableGraph {
-            nodes: HashMap<NodeId, NodeType>,
+            nodes: HashMap<NodeId, DialogueNode>,
             start_node: NodeId,
             name: Option<String>,
         }
@@ -115,7 +116,7 @@ impl<'de> Deserialize<'de> for DialogueGraph {
         
         // Add all connections
         for (id, node) in de_graph.nodes.iter() {
-            for conn in node.as_node().connections() {
+            for conn in node.connections() {
                 graph.add_edge(*id, conn.target_id, conn.label.clone())
                     .map_err(serde::de::Error::custom)?;
             }
@@ -190,14 +191,14 @@ impl DialogueGraph {
     /// # Example
     /// 
     /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, NodeType, TextNode};
+    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
     /// 
     /// let mut graph = DialogueGraph::new(NodeId(1));
-    /// let text_node = TextNode::new(NodeId(1), "Hello, world!");
+    /// let text_node = DialogueNode::text(NodeId(1), "Hello, world!");
     /// 
-    /// graph.add_node(NodeType::Text(text_node));
+    /// graph.add_node(text_node);
     /// ```
-    pub fn add_node(&mut self, node: NodeType) {
+    pub fn add_node(&mut self, node: DialogueNode) {
         let id = node.id();
         let index = self.graph.add_node(node.clone());
         self.node_indices.insert(id, index);
@@ -217,14 +218,14 @@ impl DialogueGraph {
     /// # Example
     /// 
     /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, NodeType, TextNode};
+    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
     /// 
-    /// let text_node = TextNode::new(NodeId(1), "Hello, world!");
+    /// let text_node = DialogueNode::text(NodeId(1), "Hello, world!");
     /// 
     /// let graph = DialogueGraph::new(NodeId(1))
-    ///     .with_node(NodeType::Text(text_node));
+    ///     .with_node(text_node);
     /// ```
-    pub fn with_node(mut self, node: NodeType) -> Self {
+    pub fn with_node(mut self, node: DialogueNode) -> Self {
         self.add_node(node);
         self
     }
@@ -244,13 +245,13 @@ impl DialogueGraph {
     /// # Example
     /// 
     /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, NodeType, TextNode};
+    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
     /// 
     /// let mut graph = DialogueGraph::new(NodeId(1));
     /// 
     /// // Add two nodes
-    /// graph.add_node(NodeType::Text(TextNode::new(NodeId(1), "First node")));
-    /// graph.add_node(NodeType::Text(TextNode::new(NodeId(2), "Second node")));
+    /// graph.add_node(DialogueNode::text(NodeId(1), "First node"));
+    /// graph.add_node(DialogueNode::text(NodeId(2), "Second node"));
     /// 
     /// // Connect them
     /// let result = graph.add_edge(NodeId(1), NodeId(2), Some("Next".to_string()));
@@ -282,10 +283,10 @@ impl DialogueGraph {
     /// # Example
     /// 
     /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, NodeType, TextNode};
+    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
     /// 
     /// let mut graph = DialogueGraph::new(NodeId(1));
-    /// graph.add_node(NodeType::Text(TextNode::new(NodeId(1), "Hello")));
+    /// graph.add_node(DialogueNode::text(NodeId(1), "Hello"));
     /// 
     /// let node = graph.get_node(NodeId(1));
     /// assert!(node.is_some());
@@ -293,7 +294,7 @@ impl DialogueGraph {
     /// let missing_node = graph.get_node(NodeId(99));
     /// assert!(missing_node.is_none());
     /// ```
-    pub fn get_node(&self, id: NodeId) -> Option<&NodeType> {
+    pub fn get_node(&self, id: NodeId) -> Option<&DialogueNode> {
         self.nodes.get(&id)
     }
     
@@ -306,15 +307,15 @@ impl DialogueGraph {
     /// # Example
     /// 
     /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, NodeType, TextNode};
+    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
     /// 
     /// let mut graph = DialogueGraph::new(NodeId(1));
-    /// graph.add_node(NodeType::Text(TextNode::new(NodeId(1), "Start node")));
+    /// graph.add_node(DialogueNode::text(NodeId(1), "Start node"));
     /// 
     /// let start_node = graph.get_start_node();
     /// assert!(start_node.is_some());
     /// ```
-    pub fn get_start_node(&self) -> Option<&NodeType> {
+    pub fn get_start_node(&self) -> Option<&DialogueNode> {
         self.get_node(self.start_node)
     }
     
@@ -327,7 +328,7 @@ impl DialogueGraph {
     pub fn validate(&self) -> Result<(), String> {
         // For now, just check that all referenced nodes exist
         for node in self.nodes.values() {
-            for conn in node.as_node().connections() {
+            for conn in node.connections() {
                 if !self.nodes.contains_key(&conn.target_id) {
                     return Err(format!(
                         "Node {:?} references non-existent node {:?}",

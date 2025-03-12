@@ -83,7 +83,7 @@ mod debug;
 
 // Re-exports for public API
 pub use asset::DialogueAsset;
-pub use graph::{DialogueGraph, NodeId, NodeType, TextNode, ChoiceNode, Connection};
+pub use graph::{DialogueGraph, NodeId, DialogueNode, Connection};
 pub use runtime::{DialogueRunner, DialogueState};
 pub use events::{
     DialogueStarted, DialogueEnded, DialogueNodeActivated, 
