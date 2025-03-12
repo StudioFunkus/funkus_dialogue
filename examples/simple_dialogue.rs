@@ -1,7 +1,6 @@
 //! A simple example demonstrating basic dialogue functionality with debugging tools.
 
 use bevy::prelude::*;
-use funkus_dialogue::graph::DialogueNode;
 use funkus_dialogue::*;
 
 fn main() {
@@ -311,11 +310,11 @@ fn display_dialogue(
                 if let Some(node) = dialogue.graph.get_node(node_id) {
                     // Process based on node type
                     match node {
-                        NodeType::Text(text_node) => {
+                        graph::DialogueNode::Text { text, speaker, .. } => {
                             // Update speaker
                             for mut speaker_text in speaker_query.iter_mut() {
-                                if let Some(speaker) = &text_node.speaker {
-                                    *speaker_text = Text::new(speaker.clone());
+                                if let Some(speaker_name) = speaker {
+                                    *speaker_text = Text::new(speaker_name.clone());
                                 } else {
                                     *speaker_text = Text::new("");
                                 }
@@ -323,7 +322,7 @@ fn display_dialogue(
                             
                             // Update dialogue text
                             for mut dialogue_text in dialogue_query_text.iter_mut() {
-                                *dialogue_text = Text::new(text_node.text.clone());
+                                *dialogue_text = Text::new(text.clone());
                             }
                             
                             // Clear choices
@@ -331,11 +330,11 @@ fn display_dialogue(
                                 commands.entity(choices_entity).despawn_descendants();
                             }
                         },
-                        NodeType::Choice(choice_node) => {
+                        graph::DialogueNode::Choice { prompt, connections, speaker, .. } => {
                             // Update speaker
                             for mut speaker_text in speaker_query.iter_mut() {
-                                if let Some(speaker) = &choice_node.speaker {
-                                    *speaker_text = Text::new(speaker.clone());
+                                if let Some(speaker_name) = speaker {
+                                    *speaker_text = Text::new(speaker_name.clone());
                                 } else {
                                     *speaker_text = Text::new("");
                                 }
@@ -343,15 +342,12 @@ fn display_dialogue(
                             
                             // Update dialogue text (prompt)
                             for mut dialogue_text in dialogue_query_text.iter_mut() {
-                                if let Some(prompt) = &choice_node.prompt {
-                                    *dialogue_text = Text::new(prompt.clone());
+                                if let Some(prompt_text) = prompt {
+                                    *dialogue_text = Text::new(prompt_text.clone());
                                 } else {
                                     *dialogue_text = Text::new("Choose an option:");
                                 }
                             }
-                            
-                            // Update choices
-                            let connections = choice_node.connections();
                             
                             // Handle the ChoiceSelected state
                             let selected_index = match runner.state {
