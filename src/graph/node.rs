@@ -55,7 +55,7 @@ pub struct Connection {
 
 /// Trait that all dialogue node types must implement.
 /// 
-/// The DialogueNode trait defines the common interface that all node types
+/// The DialogueElement trait defines the common interface that all node types
 /// must provide. This allows the dialogue system to work with different node types
 /// in a uniform way.
 /// 
@@ -78,7 +78,7 @@ pub struct Connection {
 ///     }
 /// }
 /// 
-/// impl DialogueNode for MyDialogueNode {
+/// impl DialogueElement for MyDialogueNode {
 ///     fn id(&self) -> NodeId {
 ///         match self {
 ///             MyDialogueNode::Simple { id, .. } => *id
