@@ -15,8 +15,6 @@ fn main() {
                 ..default()
             }),
             DialoguePlugin,
-            #[cfg(feature = "debug_ui")]
-            DialogueDebugPlugin,
         ))
         .add_systems(Startup, setup)
         .add_systems(Update, (keyboard_input, display_dialogue))
