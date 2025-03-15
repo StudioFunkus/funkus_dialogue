@@ -14,15 +14,15 @@ The Bevy Dialogue System provides tools for creating rich, branching conversatio
 
 ### Core
 
-- [ ] Dialogue asset system
-- [ ] Dialogue graph representation
-- [ ] Dialogue runtime engine
-- [ ] Node processing
+- [x] Dialogue asset system
+- [x] Dialogue graph representation
+- [x] Dialogue runtime engine
+- [x] Node processing
 
 ### Node Types
 
-- [ ] Text nodes
-- [ ] Choice nodes
+- [x] Text nodes
+- [x] Choice nodes
 - [ ] Condition nodes
 - [ ] Action nodes
 - [ ] Jump nodes
