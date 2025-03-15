@@ -35,11 +35,20 @@ use thiserror::Error;
 ///                     funkus_dialogue::error::DialogueError::NodeNotFound(id) => {
 ///                         println!("Node {:?} not found", id)
 ///                     },
+///                     funkus_dialogue::error::DialogueError::GraphError(msg) => {
+///                         println!("Graph structure error: {}", msg)
+///                     },
+///                     funkus_dialogue::error::DialogueError::AssetNotLoaded => {
+///                         println!("Dialogue asset hasn't been loaded yet")
+///                     },
 ///                     // Handle other error types
 ///                     _ => println!("Other error: {}", err),
 ///
 ///                 },
 ///             }
+///         } else {
+///             // Handle the case where the asset isn't loaded
+///             println!("Dialogue asset not found in Assets resource");
 ///         }
 ///     }
 /// }

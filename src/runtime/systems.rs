@@ -16,6 +16,10 @@ use crate::runtime::DialogueState;
 /// - Auto-advancing text nodes when the timer completes
 /// - Handling other state updates
 ///
+/// Note: The system automatically skips runners with inactive state or
+/// runners whose dialogue assets haven't been loaded yet. It will silently
+/// continue processing other runners without errors.
+///
 /// # System Parameters
 ///
 /// * `time` - The Bevy time resource for delta time

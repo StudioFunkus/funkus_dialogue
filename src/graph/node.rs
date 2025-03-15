@@ -85,12 +85,11 @@ impl ConnectionData {
 /// # Example Implementation
 ///
 /// ```rust
-/// use funkus_dialogue::graph::{DialogueNode, NodeId, Connection};
+/// use funkus_dialogue::graph::{DialogueNode, NodeId};
 ///
 /// enum MyDialogueNode {
 ///     Simple {
 ///         id: NodeId,
-///         connections: Vec<Connection>,
 ///         text: String
 ///     }
 /// }
@@ -99,12 +98,6 @@ impl ConnectionData {
 ///     fn id(&self) -> NodeId {
 ///         match self {
 ///             MyDialogueNode::Simple { id, .. } => *id
-///         }
-///     }
-///     
-///     fn connections(&self) -> &[Connection] {
-///         match self {
-///             MyDialogueNode::Simple { connections, .. } => connections
 ///         }
 ///     }
 ///     

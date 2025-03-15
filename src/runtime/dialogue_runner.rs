@@ -27,11 +27,12 @@ use crate::graph::{DialogueNode, NodeId};
 ///
 /// # State Transitions
 ///
-/// The typical state transitions are:
+/// The possible state transitions are:
 ///
 /// - `Inactive` -> `ShowingText` or `WaitingForChoice` (when starting)
 /// - `ShowingText` -> `ShowingText` or `WaitingForChoice` or `Finished` (when advancing)
 /// - `WaitingForChoice` -> `ChoiceSelected` (when selecting)
+/// - `ChoiceSelected` -> `ChoiceSelected` (when selecting a different choice)
 /// - `ChoiceSelected` -> `ShowingText` or `WaitingForChoice` or `Finished` (when advancing)
 /// - Any state -> `Inactive` (when stopping)
 /// - Any state -> `Error` (when an error occurs)
@@ -108,8 +109,20 @@ impl DialogueState {
 /// * `auto_advance` - Whether the dialogue should auto-advance after text nodes
 /// * `auto_advance_time` - Time to wait for auto-advance (in seconds)
 /// * `auto_advance_timer` - Timer for auto-advance
-/// * `selected_choice` - Selected choice index (if any)
 /// * `variables` - Simple variable storage
+///
+/// # Auto-Advance Feature
+///
+/// The DialogueRunner includes an auto-advance feature that can automatically advance
+/// text nodes after a specified time. This is useful for cutscenes or situations where
+/// player interaction should be minimized.
+///
+/// - `auto_advance`: Enable/disable the auto-advance feature
+/// - `auto_advance_time`: Time in seconds to wait before advancing
+/// - `auto_advance_timer`: Internal timer that tracks elapsed time
+///
+/// Auto-advance only applies to text nodes and is ignored for choice nodes.
+/// The timer is reset whenever the dialogue advances to a new node.
 ///
 /// # Example
 ///
@@ -336,11 +349,11 @@ impl DialogueRunner {
                         connections.len() - 1,
                     ));
                 }
-        
+
                 // Move to the selected choice's target node
                 let next_id = connections[choice_index].0;
                 self.current_node_id = Some(next_id);
-        
+
                 // Update state based on the next node type
                 if let Some(next_node) = dialogue.graph.get_node(next_id) {
                     match next_node {
@@ -361,8 +374,8 @@ impl DialogueRunner {
 
     /// Selects a choice option.
     ///
-    /// This method sets the selected choice and updates the dialogue state
-    /// to reflect that a choice has been selected.
+    /// This method updates the dialogue state to reflect that a choice has been selected.
+    /// The dialogue state changes to `DialogueState::ChoiceSelected(choice_index)`.
     ///
     /// # Parameters
     ///
@@ -407,10 +420,10 @@ impl DialogueRunner {
                 action: "select_choice".to_string(),
             });
         }
-    
+
         // Update the state to ChoiceSelected
         self.state = DialogueState::ChoiceSelected(choice_index);
-    
+
         Ok(())
     }
 
