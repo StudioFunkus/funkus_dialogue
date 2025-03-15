@@ -139,15 +139,16 @@ impl<'de> Deserialize<'de> for DialogueGraph {
             graph.add_node(node.clone());
         }
 
-        // Then, reconstruct the connections between nodes
+        // Then, add edges directly to the petgraph structure without modifying nodes' internal connections
         for node in &data.nodes {
             let from_id = node.id();
-            for conn in node.connections() {
-                let to_id = conn.target_id;
-                let label = conn.label.clone();
-
-                // Recreate the edge in the graph
-                let _ = graph.add_edge(from_id, to_id, label);
+            if let Some(&from_idx) = graph.node_indices.get(&from_id) {
+                for conn in node.connections() {
+                    let to_id = conn.target_id;
+                    if let Some(&to_idx) = graph.node_indices.get(&to_id) {
+                        graph.graph.add_edge(from_idx, to_idx, conn.label.clone());
+                    }
+                }
             }
         }
 
