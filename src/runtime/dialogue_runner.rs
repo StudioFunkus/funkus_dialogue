@@ -139,8 +139,6 @@ pub struct DialogueRunner {
     pub auto_advance_time: f32,
     /// Timer for auto-advance
     pub auto_advance_timer: Timer,
-    /// Selected choice index (if any)
-    pub selected_choice: Option<usize>,
     /// Simple variable storage (to be expanded later)
     pub variables: HashMap<String, String>,
 }
@@ -154,7 +152,6 @@ impl Default for DialogueRunner {
             auto_advance: false,
             auto_advance_time: 2.0,
             auto_advance_timer: Timer::from_seconds(2.0, TimerMode::Once),
-            selected_choice: None,
             variables: HashMap::new(),
         }
     }
@@ -326,13 +323,7 @@ impl DialogueRunner {
                 let choice_index = match self.state {
                     DialogueState::ChoiceSelected(index) => index,
                     _ => {
-                        // If we have a selected_choice but aren't in ChoiceSelected state, use that
-                        // (This maintains backward compatibility)
-                        if let Some(index) = self.selected_choice {
-                            index
-                        } else {
-                            return Err(DialogueError::NoChoiceSelected);
-                        }
+                        return Err(DialogueError::NoChoiceSelected);
                     }
                 };
 
@@ -345,14 +336,11 @@ impl DialogueRunner {
                         connections.len() - 1,
                     ));
                 }
-
+        
                 // Move to the selected choice's target node
                 let next_id = connections[choice_index].0;
                 self.current_node_id = Some(next_id);
-
-                // Reset selected choice
-                self.selected_choice = None;
-
+        
                 // Update state based on the next node type
                 if let Some(next_node) = dialogue.graph.get_node(next_id) {
                     match next_node {
@@ -419,13 +407,10 @@ impl DialogueRunner {
                 action: "select_choice".to_string(),
             });
         }
-
-        // Store the choice index and update the state
-        self.selected_choice = Some(choice_index);
-
+    
         // Update the state to ChoiceSelected
         self.state = DialogueState::ChoiceSelected(choice_index);
-
+    
         Ok(())
     }
 
@@ -515,6 +500,5 @@ impl DialogueRunner {
     pub fn stop(&mut self) {
         self.state = DialogueState::Inactive;
         self.current_node_id = None;
-        self.selected_choice = None;
     }
 }

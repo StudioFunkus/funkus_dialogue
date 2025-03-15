@@ -107,14 +107,14 @@ impl Serialize for DialogueGraph {
             #[serde(skip_serializing_if = "Option::is_none")]
             portrait: Option<String>,
         }
-        
+
         #[derive(Serialize)]
         struct SerialConnection {
             from: NodeId,
             to: NodeId,
             label: Option<String>,
         }
-        
+
         #[derive(Serialize)]
         struct SerialGraph {
             nodes: Vec<SerialNode>,
@@ -126,7 +126,7 @@ impl Serialize for DialogueGraph {
         // Collect all nodes
         let mut nodes = Vec::new();
         let mut connections = Vec::new();
-        
+
         // Process each node
         for node_id in self.node_ids() {
             if let Some(node) = self.get_node(node_id) {
@@ -135,13 +135,17 @@ impl Serialize for DialogueGraph {
                     DialogueNode::Text { text, .. } => ("Text", Some(text.clone()), None),
                     DialogueNode::Choice { prompt, .. } => ("Choice", None, prompt.clone()),
                 };
-                
+
                 // Get speaker and portrait from either node type
                 let (speaker, portrait) = match node {
-                    DialogueNode::Text { speaker, portrait, .. } | 
-                    DialogueNode::Choice { speaker, portrait, .. } => (speaker.clone(), portrait.clone()),
+                    DialogueNode::Text {
+                        speaker, portrait, ..
+                    }
+                    | DialogueNode::Choice {
+                        speaker, portrait, ..
+                    } => (speaker.clone(), portrait.clone()),
                 };
-                
+
                 // Add node to the collection
                 nodes.push(SerialNode {
                     node_type,
@@ -151,7 +155,7 @@ impl Serialize for DialogueGraph {
                     speaker,
                     portrait,
                 });
-                
+
                 // Process all connections from this node
                 for (target_id, conn_data) in self.get_connections(node_id) {
                     connections.push(SerialConnection {
@@ -162,7 +166,7 @@ impl Serialize for DialogueGraph {
                 }
             }
         }
-        
+
         // Create the serializable structure
         let graph_data = SerialGraph {
             nodes,
@@ -170,7 +174,7 @@ impl Serialize for DialogueGraph {
             start_node: self.start_node,
             name: self.name.clone(),
         };
-        
+
         graph_data.serialize(serializer)
     }
 }
@@ -191,14 +195,14 @@ impl<'de> Deserialize<'de> for DialogueGraph {
             speaker: Option<String>,
             portrait: Option<String>,
         }
-        
+
         #[derive(Deserialize)]
         struct SerialConnection {
             from: NodeId,
             to: NodeId,
             label: Option<String>,
         }
-        
+
         #[derive(Deserialize)]
         struct SerialGraph {
             nodes: Vec<SerialNode>,
@@ -209,50 +213,55 @@ impl<'de> Deserialize<'de> for DialogueGraph {
 
         // Deserialize the data
         let data = SerialGraph::deserialize(deserializer)?;
-        
+
         // Create a new graph
         let mut graph = DialogueGraph::new(data.start_node);
         graph.name = data.name;
-        
+
         // Add all nodes first
         for node_data in &data.nodes {
             // Create the appropriate node type
             let node = match node_data.node_type.as_str() {
                 "Text" => {
                     let mut node = DialogueNode::text(
-                        node_data.id, 
-                        node_data.text.clone().unwrap_or_default()
+                        node_data.id,
+                        node_data.text.clone().unwrap_or_default(),
                     );
-                    if let DialogueNode::Text { speaker, portrait, .. } = &mut node {
+                    if let DialogueNode::Text {
+                        speaker, portrait, ..
+                    } = &mut node
+                    {
                         *speaker = node_data.speaker.clone();
                         *portrait = node_data.portrait.clone();
                     }
                     node
-                },
+                }
                 "Choice" => {
                     let mut node = DialogueNode::choice(node_data.id);
-                    if let DialogueNode::Choice { prompt, speaker, portrait, .. } = &mut node {
+                    if let DialogueNode::Choice {
+                        prompt,
+                        speaker,
+                        portrait,
+                        ..
+                    } = &mut node
+                    {
                         *prompt = node_data.prompt.clone();
                         *speaker = node_data.speaker.clone();
                         *portrait = node_data.portrait.clone();
                     }
                     node
-                },
+                }
                 _ => continue, // Skip unknown node types
             };
-            
+
             graph.add_node(node);
         }
-        
+
         // Add all connections
         for conn in &data.connections {
-            let _ = graph.connect(
-                conn.from,
-                conn.to,
-                ConnectionData::new(conn.label.clone())
-            );
+            let _ = graph.connect(conn.from, conn.to, ConnectionData::new(conn.label.clone()));
         }
-        
+
         Ok(graph)
     }
 }
@@ -474,7 +483,7 @@ impl DialogueGraph {
     /// Validates the graph structure.
     ///
     /// This performs several checks to ensure the graph is valid:
-    /// - All node connections reference valid nodes
+    /// - All edge connections reference valid nodes
     /// - The start node exists
     /// - All nodes are reachable from the start node
     ///
@@ -482,26 +491,29 @@ impl DialogueGraph {
     ///
     /// Ok(()) if the graph is valid, or an error message describing the issue
     pub fn validate(&self) -> Result<(), String> {
-        // Check for connections to invalid nodes
-        for node_idx in self.graph.node_indices() {
-            if let Some(node) = self.graph.node_weight(node_idx) {
-                for conn in node.connections() {
-                    if !self.node_indices.contains_key(&conn.target_id) {
-                        return Err(format!(
-                            "Node {:?} references non-existent node {:?}",
-                            node.id(),
-                            conn.target_id
-                        ));
-                    }
+        // Check that all edges point to valid target nodes
+        for edge in self.graph.edge_indices() {
+            if let Some((source_idx, target_idx)) = self.graph.edge_endpoints(edge) {
+                // Find the NodeId for the source
+                let source_id = self.node_indices.iter()
+                    .find_map(|(id, &idx)| if idx == source_idx { Some(id) } else { None })
+                    .ok_or_else(|| format!("Internal error: Edge source index {:?} has no NodeId mapping", source_idx))?;
+                    
+                // Check if the target node exists by attempting to get its weight
+                if self.graph.node_weight(target_idx).is_none() {
+                    return Err(format!(
+                        "Node {:?} has an edge to non-existent target index {:?}",
+                        source_id, target_idx
+                    ));
                 }
             }
         }
-
+    
         // Check that the start node exists
         if !self.node_indices.contains_key(&self.start_node) {
             return Err(format!("Start node {:?} does not exist", self.start_node));
         }
-
+    
         // Check for unreachable nodes using petgraph's algorithms
         if let Some(&start_index) = self.node_indices.get(&self.start_node) {
             // Using Petgraph's reachability analysis
@@ -519,7 +531,7 @@ impl DialogueGraph {
                 }
             }
         }
-
+    
         Ok(())
     }
 
@@ -822,22 +834,20 @@ mod tests {
 
         // Add a few nodes
         graph.add_node(DialogueNode::text(NodeId(1), "Start").with_speaker("NPC"));
-
-        graph.add_node(
-            DialogueNode::choice(NodeId(2))
-                .with_prompt("Choose:")
-                .unwrap()
-                .with_choice("Option A", NodeId(3))
-                .unwrap()
-                .with_choice("Option B", NodeId(4))
-                .unwrap(),
-        );
+        
+        // Add choice node (without connections)
+        let choice_node = DialogueNode::choice(NodeId(2))
+            .with_prompt("Choose:")
+            .unwrap();
+        graph.add_node(choice_node);
 
         graph.add_node(DialogueNode::text(NodeId(3), "You chose A"));
         graph.add_node(DialogueNode::text(NodeId(4), "You chose B"));
 
-        // Connect nodes
-        graph.add_edge(NodeId(1), NodeId(2), None).unwrap();
+        // Connect nodes using graph-based connections
+        graph.connect(NodeId(1), NodeId(2), ConnectionData::new(None)).unwrap();
+        graph.connect(NodeId(2), NodeId(3), ConnectionData::new(Some("Option A".to_string()))).unwrap();
+        graph.connect(NodeId(2), NodeId(4), ConnectionData::new(Some("Option B".to_string()))).unwrap();
 
         graph
     }
