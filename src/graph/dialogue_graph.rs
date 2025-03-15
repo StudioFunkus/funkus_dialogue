@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use super::node::NodeId;
 use super::nodes::DialogueNode;
-use super::{Connection, DialogueElement};
+use super::{Connection, ConnectionData, DialogueElement};
 
 /// Represents a complete dialogue graph with nodes and metadata.
 ///
@@ -70,7 +70,7 @@ use super::{Connection, DialogueElement};
 pub struct DialogueGraph {
     /// The underlying directed graph - primary data store for nodes and connections
     #[reflect(ignore)]
-    graph: DiGraph<DialogueNode, Option<String>>,
+    graph: DiGraph<DialogueNode, ConnectionData>,
     /// Mapping between our stable NodeIds and petgraph's internal NodeIndices.
     /// This map is essential because:
     /// 1. Petgraph's indices may change during operations like node removal
@@ -89,28 +89,88 @@ impl Serialize for DialogueGraph {
     where
         S: serde::Serializer,
     {
-        // Define a serialization structure that directly mirrors our petgraph approach
-        // Using Vec<DialogueNode> instead of HashMap<NodeId, DialogueNode> because:
-        // 1. It directly represents how nodes are stored in petgraph
-        // 2. Each DialogueNode already contains its ID and connections
-        // 3. It simplifies serialization/deserialization logic
+        // Define our new serialization format
+        #[derive(Serialize)]
+        struct SerialNode {
+            #[serde(rename = "type")]
+            node_type: &'static str,
+            id: NodeId,
+            // Text node fields
+            #[serde(skip_serializing_if = "Option::is_none")]
+            text: Option<String>,
+            // Choice node fields
+            #[serde(skip_serializing_if = "Option::is_none")]
+            prompt: Option<String>,
+            // Common fields
+            #[serde(skip_serializing_if = "Option::is_none")]
+            speaker: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            portrait: Option<String>,
+        }
+        
+        #[derive(Serialize)]
+        struct SerialConnection {
+            from: NodeId,
+            to: NodeId,
+            label: Option<String>,
+        }
+        
         #[derive(Serialize)]
         struct SerialGraph {
-            // Store nodes as a flat array - their relationships are defined by their connections
-            nodes: Vec<DialogueNode>,
+            nodes: Vec<SerialNode>,
+            connections: Vec<SerialConnection>,
             start_node: NodeId,
             name: Option<String>,
         }
 
-        // Collect all nodes from petgraph's node_weights iterator into a Vec
-        let nodes: Vec<DialogueNode> = self.graph.node_weights().cloned().collect();
-
+        // Collect all nodes
+        let mut nodes = Vec::new();
+        let mut connections = Vec::new();
+        
+        // Process each node
+        for node_id in self.node_ids() {
+            if let Some(node) = self.get_node(node_id) {
+                // Extract node data based on type
+                let (node_type, text, prompt) = match node {
+                    DialogueNode::Text { text, .. } => ("Text", Some(text.clone()), None),
+                    DialogueNode::Choice { prompt, .. } => ("Choice", None, prompt.clone()),
+                };
+                
+                // Get speaker and portrait from either node type
+                let (speaker, portrait) = match node {
+                    DialogueNode::Text { speaker, portrait, .. } | 
+                    DialogueNode::Choice { speaker, portrait, .. } => (speaker.clone(), portrait.clone()),
+                };
+                
+                // Add node to the collection
+                nodes.push(SerialNode {
+                    node_type,
+                    id: node_id,
+                    text,
+                    prompt,
+                    speaker,
+                    portrait,
+                });
+                
+                // Process all connections from this node
+                for (target_id, conn_data) in self.get_connections(node_id) {
+                    connections.push(SerialConnection {
+                        from: node_id,
+                        to: target_id,
+                        label: conn_data.label.clone(),
+                    });
+                }
+            }
+        }
+        
+        // Create the serializable structure
         let graph_data = SerialGraph {
             nodes,
+            connections,
             start_node: self.start_node,
             name: self.name.clone(),
         };
-
+        
         graph_data.serialize(serializer)
     }
 }
@@ -120,38 +180,79 @@ impl<'de> Deserialize<'de> for DialogueGraph {
     where
         D: serde::Deserializer<'de>,
     {
-        // Define a matching deserialization structure to receive the array-based format
+        // Define matching deserialization structure
+        #[derive(Deserialize)]
+        struct SerialNode {
+            #[serde(rename = "type")]
+            node_type: String,
+            id: NodeId,
+            text: Option<String>,
+            prompt: Option<String>,
+            speaker: Option<String>,
+            portrait: Option<String>,
+        }
+        
+        #[derive(Deserialize)]
+        struct SerialConnection {
+            from: NodeId,
+            to: NodeId,
+            label: Option<String>,
+        }
+        
         #[derive(Deserialize)]
         struct SerialGraph {
-            nodes: Vec<DialogueNode>,
+            nodes: Vec<SerialNode>,
+            connections: Vec<SerialConnection>,
             start_node: NodeId,
             name: Option<String>,
         }
 
+        // Deserialize the data
         let data = SerialGraph::deserialize(deserializer)?;
-
-        // Create a new graph with the basic properties
+        
+        // Create a new graph
         let mut graph = DialogueGraph::new(data.start_node);
         graph.name = data.name;
-
-        // First, add all nodes to the graph
-        for node in &data.nodes {
-            graph.add_node(node.clone());
-        }
-
-        // Then, add edges directly to the petgraph structure without modifying nodes' internal connections
-        for node in &data.nodes {
-            let from_id = node.id();
-            if let Some(&from_idx) = graph.node_indices.get(&from_id) {
-                for conn in node.connections() {
-                    let to_id = conn.target_id;
-                    if let Some(&to_idx) = graph.node_indices.get(&to_id) {
-                        graph.graph.add_edge(from_idx, to_idx, conn.label.clone());
+        
+        // Add all nodes first
+        for node_data in &data.nodes {
+            // Create the appropriate node type
+            let node = match node_data.node_type.as_str() {
+                "Text" => {
+                    let mut node = DialogueNode::text(
+                        node_data.id, 
+                        node_data.text.clone().unwrap_or_default()
+                    );
+                    if let DialogueNode::Text { speaker, portrait, .. } = &mut node {
+                        *speaker = node_data.speaker.clone();
+                        *portrait = node_data.portrait.clone();
                     }
-                }
-            }
+                    node
+                },
+                "Choice" => {
+                    let mut node = DialogueNode::choice(node_data.id);
+                    if let DialogueNode::Choice { prompt, speaker, portrait, .. } = &mut node {
+                        *prompt = node_data.prompt.clone();
+                        *speaker = node_data.speaker.clone();
+                        *portrait = node_data.portrait.clone();
+                    }
+                    node
+                },
+                _ => continue, // Skip unknown node types
+            };
+            
+            graph.add_node(node);
         }
-
+        
+        // Add all connections
+        for conn in &data.connections {
+            let _ = graph.connect(
+                conn.from,
+                conn.to,
+                ConnectionData::new(conn.label.clone())
+            );
+        }
+        
         Ok(graph)
     }
 }
@@ -295,34 +396,7 @@ impl DialogueGraph {
         to_id: NodeId,
         label: Option<String>,
     ) -> Result<(), String> {
-        let from_index = self
-            .node_indices
-            .get(&from_id)
-            .ok_or_else(|| format!("Source node {:?} not found", from_id))?;
-        let to_index = self
-            .node_indices
-            .get(&to_id)
-            .ok_or_else(|| format!("Target node {:?} not found", to_id))?;
-
-        // Add the edge to the graph
-        self.graph.add_edge(*from_index, *to_index, label.clone());
-
-        // Also update the node's internal connections field to keep it in sync
-        if let Some(node) = self.graph.node_weight_mut(*from_index) {
-            // Create connection
-            let connection = Connection {
-                target_id: to_id,
-                label: label.clone(),
-            };
-
-            // Add to the node's connections array
-            match node {
-                DialogueNode::Text { connections, .. } => connections.push(connection),
-                DialogueNode::Choice { connections, .. } => connections.push(connection),
-            }
-        }
-
-        Ok(())
+        self.connect(from_id, to_id, ConnectionData::new(label))
     }
 
     /// Gets a node by its ID.
@@ -462,28 +536,11 @@ impl DialogueGraph {
     ///
     /// A vector of (NodeId, Option<String>) pairs representing connected nodes and their connection labels
     pub fn get_connected_nodes(&self, id: NodeId) -> Vec<(NodeId, Option<String>)> {
-        if let Some(&node_idx) = self.node_indices.get(&id) {
-            let edges = self
-                .graph
-                .edges_directed(node_idx, petgraph::Direction::Outgoing);
-            edges
-                .filter_map(|edge| {
-                    let target_idx = edge.target();
-                    // Find NodeId for this target using node_indices in reverse
-                    let target_id = self.node_indices.iter().find_map(|(id, &idx)| {
-                        if idx == target_idx {
-                            Some(*id)
-                        } else {
-                            None
-                        }
-                    })?;
-
-                    Some((target_id, edge.weight().clone()))
-                })
-                .collect()
-        } else {
-            Vec::new()
-        }
+        // Convert from ConnectionData to simple Option<String>
+        self.get_connections(id)
+            .into_iter()
+            .map(|(target_id, data)| (target_id, data.label.clone()))
+            .collect()
     }
 
     /// Returns the number of nodes in the graph.
@@ -646,6 +703,112 @@ impl DialogueGraph {
         }
 
         Ok(())
+    }
+
+    /// Connect two nodes with connection data.
+    ///
+    /// This method creates a connection from one node to another with the specified data.
+    ///
+    /// # Parameters
+    ///
+    /// * `from` - The ID of the source node
+    /// * `to` - The ID of the target node  
+    /// * `data` - The connection data to store on the edge
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) if the connection was created successfully, or an error if either node doesn't exist
+    pub fn connect(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        data: ConnectionData,
+    ) -> Result<(), String> {
+        let from_idx = self
+            .node_indices
+            .get(&from)
+            .ok_or_else(|| format!("Source node {:?} not found", from))?;
+        let to_idx = self
+            .node_indices
+            .get(&to)
+            .ok_or_else(|| format!("Target node {:?} not found", to))?;
+
+        self.graph.add_edge(*from_idx, *to_idx, data);
+        Ok(())
+    }
+
+    /// Remove a connection between nodes.
+    ///
+    /// # Parameters
+    ///
+    /// * `from` - The ID of the source node
+    /// * `to` - The ID of the target node
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) if the connection was removed, or an error if no connection exists
+    pub fn disconnect(&mut self, from: NodeId, to: NodeId) -> Result<(), String> {
+        let from_idx = self
+            .node_indices
+            .get(&from)
+            .ok_or_else(|| format!("Source node {:?} not found", from))?;
+        let to_idx = self
+            .node_indices
+            .get(&to)
+            .ok_or_else(|| format!("Target node {:?} not found", to))?;
+
+        // Find edge between these nodes (if any)
+        let edges: Vec<_> = self
+            .graph
+            .edges_directed(*from_idx, petgraph::Direction::Outgoing)
+            .filter(|e| e.target() == *to_idx)
+            .map(|e| e.id())
+            .collect();
+
+        if edges.is_empty() {
+            return Err(format!("No connection from {:?} to {:?}", from, to));
+        }
+
+        // Remove all edges between these nodes
+        for edge_id in edges {
+            self.graph.remove_edge(edge_id);
+        }
+
+        Ok(())
+    }
+
+    /// Get all connections from a node.
+    ///
+    /// # Parameters
+    ///
+    /// * `from` - The ID of the node to get connections from
+    ///
+    /// # Returns
+    ///
+    /// A vector of (target NodeId, ConnectionData) pairs
+    pub fn get_connections(&self, from: NodeId) -> Vec<(NodeId, &ConnectionData)> {
+        if let Some(&node_idx) = self.node_indices.get(&from) {
+            let edges = self
+                .graph
+                .edges_directed(node_idx, petgraph::Direction::Outgoing);
+            edges
+                .filter_map(|edge| {
+                    let target_idx = edge.target();
+                    // Find NodeId for this target using node_indices in reverse
+                    let target_id = self.node_indices.iter().find_map(|(id, &idx)| {
+                        if idx == target_idx {
+                            Some(*id)
+                        } else {
+                            None
+                        }
+                    })?;
+
+                    Some((target_id, edge.weight()))
+                })
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 }
 
