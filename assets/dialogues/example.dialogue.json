@@ -1,7 +1,7 @@
 {
   "graph": {
-    "nodes": {
-      "1": {
+    "nodes": [
+      {
         "Text": {
           "id": 1,
           "connections": [
@@ -15,7 +15,7 @@
           "portrait": null
         }
       },
-      "2": {
+      {
         "Choice": {
           "id": 2,
           "connections": [
@@ -37,7 +37,7 @@
           "portrait": null
         }
       },
-      "3": {
+      {
         "Text": {
           "id": 3,
           "connections": [
@@ -51,7 +51,7 @@
           "portrait": null
         }
       },
-      "4": {
+      {
         "Text": {
           "id": 4,
           "connections": [
@@ -65,7 +65,7 @@
           "portrait": null
         }
       },
-      "5": {
+      {
         "Text": {
           "id": 5,
           "connections": [],
@@ -74,7 +74,7 @@
           "portrait": null
         }
       },
-      "6": {
+      {
         "Choice": {
           "id": 6,
           "connections": [
@@ -96,7 +96,7 @@
           "portrait": null
         }
       },
-      "7": {
+      {
         "Text": {
           "id": 7,
           "connections": [
@@ -110,7 +110,7 @@
           "portrait": null
         }
       },
-      "8": {
+      {
         "Text": {
           "id": 8,
           "connections": [
@@ -124,7 +124,7 @@
           "portrait": null
         }
       }
-    },
+    ],
     "start_node": 1,
     "name": "Test Dialogue"
   },
