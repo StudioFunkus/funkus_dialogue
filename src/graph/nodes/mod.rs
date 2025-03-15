@@ -49,8 +49,6 @@ pub enum DialogueNode {
     Text {
         /// Unique identifier for this node
         id: NodeId,
-        /// Connections to other nodes
-        connections: Vec<Connection>,
         /// The text content to display
         text: String,
         /// The name of the speaker (optional)
@@ -62,8 +60,6 @@ pub enum DialogueNode {
     Choice {
         /// Unique identifier for this node
         id: NodeId,
-        /// Connections to other nodes (these are the choices)
-        connections: Vec<Connection>,
         /// Optional prompt text to display before the choices
         prompt: Option<String>,
         /// Optional speaker for the prompt
@@ -95,7 +91,6 @@ impl DialogueNode {
     pub fn text(id: NodeId, text: impl Into<String>) -> Self {
         DialogueNode::Text {
             id,
-            connections: Vec::new(),
             text: text.into(),
             speaker: None,
             portrait: None,
@@ -122,40 +117,10 @@ impl DialogueNode {
     pub fn choice(id: NodeId) -> Self {
         DialogueNode::Choice {
             id,
-            connections: Vec::new(),
             prompt: None,
             speaker: None,
             portrait: None,
         }
-    }
-    
-    /// Adds a connection to another node.
-    /// 
-    /// This method can be used with any node type to add an outgoing connection.
-    /// 
-    /// # Parameters
-    /// 
-    /// * `target_id` - The ID of the target node
-    /// * `label` - Optional label for this connection
-    /// 
-    /// # Example
-    /// 
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
-    /// let mut node = DialogueNode::text(NodeId(1), "Hello world");
-    /// node.add_connection(NodeId(2), None);
-    /// ```
-    pub fn add_connection(&mut self, target_id: NodeId, label: Option<String>) {
-        let connections = match self {
-            DialogueNode::Text { connections, .. } => connections,
-            DialogueNode::Choice { connections, .. } => connections,
-        };
-        
-        connections.push(Connection {
-            target_id,
-            label,
-        });
     }
     
     /// Sets the speaker for this node.
@@ -260,40 +225,6 @@ impl DialogueNode {
         }
     }
     
-    /// Adds a choice option to a Choice node.
-    /// 
-    /// # Parameters
-    /// 
-    /// * `text` - The text for this choice option
-    /// * `target_id` - The ID of the node to go to if this choice is selected
-    /// 
-    /// # Returns
-    /// 
-    /// Ok(()) if successful, or an error if this is not a Choice node
-    /// 
-    /// # Example
-    /// 
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
-    /// let mut node = DialogueNode::choice(NodeId(2));
-    /// node.add_choice("Go to town", NodeId(3)).unwrap();
-    /// ```
-    pub fn add_choice(&mut self, text: impl Into<String>, target_id: NodeId) -> Result<(), &'static str> {
-        match self {
-            DialogueNode::Choice { connections, .. } => {
-                connections.push(Connection {
-                    target_id,
-                    label: Some(text.into()),
-                });
-                Ok(())
-            }
-            _ => Err("Can only add choices to a Choice node"),
-        }
-    }
-
-    // Builder pattern methods
-    
     /// Builder method to set the speaker.
     /// 
     /// # Parameters
@@ -340,29 +271,6 @@ impl DialogueNode {
         self
     }
     
-    /// Builder method to add a connection to the next node.
-    /// 
-    /// # Parameters
-    /// 
-    /// * `target_id` - The ID of the next node
-    /// 
-    /// # Returns
-    /// 
-    /// The node with the connection added
-    /// 
-    /// # Example
-    /// 
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
-    /// let node = DialogueNode::text(NodeId(1), "Hello")
-    ///     .with_next(NodeId(2));
-    /// ```
-    pub fn with_next(mut self, target_id: NodeId) -> Self {
-        self.add_connection(target_id, None);
-        self
-    }
-    
     /// Builder method to set the prompt for a Choice node.
     /// 
     /// # Parameters
@@ -385,30 +293,6 @@ impl DialogueNode {
         self.set_prompt(prompt)?;
         Ok(self)
     }
-    
-    /// Builder method to add a choice to a Choice node.
-    /// 
-    /// # Parameters
-    /// 
-    /// * `text` - The text for this choice
-    /// * `target_id` - The target node ID if this choice is selected
-    /// 
-    /// # Returns
-    /// 
-    /// The node with the choice added, or an error if not a Choice node
-    /// 
-    /// # Example
-    /// 
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
-    /// let node = DialogueNode::choice(NodeId(2))
-    ///     .with_choice("Go to town", NodeId(3)).unwrap();
-    /// ```
-    pub fn with_choice(mut self, text: impl Into<String>, target_id: NodeId) -> Result<Self, &'static str> {
-        self.add_choice(text, target_id)?;
-        Ok(self)
-    }
 }
 
 impl DialogueElement for DialogueNode {
@@ -418,14 +302,7 @@ impl DialogueElement for DialogueNode {
             DialogueNode::Choice { id, .. } => *id,
         }
     }
-    
-    fn connections(&self) -> &[Connection] {
-        match self {
-            DialogueNode::Text { connections, .. } => connections,
-            DialogueNode::Choice { connections, .. } => connections,
-        }
-    }
-    
+
     fn display_name(&self) -> String {
         match self {
             DialogueNode::Text { text, speaker, .. } => {

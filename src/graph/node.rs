@@ -80,7 +80,6 @@ impl ConnectionData {
 /// # Methods
 ///
 /// * `id()` - Returns the unique ID of this node
-/// * `connections()` - Returns a reference to the list of connections from this node to other nodes
 /// * `display_name()` - Returns a human-readable name for debugging and UI purposes
 ///
 /// # Example Implementation
@@ -119,9 +118,6 @@ impl ConnectionData {
 pub trait DialogueElement: Send + Sync + 'static {
     /// Returns the unique ID of this node.
     fn id(&self) -> NodeId;
-
-    /// Returns a reference to the list of connections from this node to other nodes.
-    fn connections(&self) -> &[Connection];
 
     /// Returns a display name for debugging and editor purposes.
     fn display_name(&self) -> String;
