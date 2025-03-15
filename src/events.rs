@@ -11,13 +11,13 @@
 //!    - `StartDialogue` - Start a dialogue
 //!    - `StopDialogue` - Stop a dialogue
 //!    - `AdvanceDialogue` - Move to the next node
-//!    - `SelectDialogueChoice` - Select a choice
+//!    - `SelectDialogueChoice` - Select a choice (without advancing)
 //!
 //! 2. **Notification Events** - Sent by the dialogue system to notify about state changes:
 //!    - `DialogueStarted` - A dialogue has started
 //!    - `DialogueEnded` - A dialogue has ended
 //!    - `DialogueNodeActivated` - A node has been activated
-//!    - `DialogueChoiceMade` - A choice has been selected
+//!    - `DialogueChoiceMade` - A choice has been selected (sent upon selection, before advancing)
 //!
 //! ## Usage Example
 //!

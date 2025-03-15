@@ -33,7 +33,7 @@
 //! fn setup_dialogue(
 //!     mut commands: Commands,
 //!     asset_server: Res<AssetServer>,
-//!     mut dialogue_events: EventWriter<funkus_dialogue::StartDialogue>,
+//!     mut start_events: EventWriter<funkus_dialogue::StartDialogue>,
 //! ) {
 //!     // Create an entity to run the dialogue
 //!     let entity = commands.spawn((
@@ -45,7 +45,7 @@
 //!     let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
 //!     
 //!     // Start the dialogue
-//!     dialogue_events.send(funkus_dialogue::StartDialogue {
+//!     start_events.send(funkus_dialogue::StartDialogue {
 //!         entity,
 //!         dialogue_handle,
 //!     });
@@ -56,11 +56,16 @@
 //!
 //! The system follows a layered architecture:
 //!
-//! 1. **Asset Layer**: Defines dialogue data structures and handles loading
-//! 2. **Graph Layer**: Provides the core graph representation of dialogues
-//! 3. **Runtime Layer**: Processes dialogues during gameplay
-//! 4. **Event Layer**: Connects dialogues with game systems through events
-//! 5. **UI Layer**: Handles presentation and player interaction (provided separately)
+//! 1. **Asset Layer**: Defines dialogue data structures and handles loading from JSON files
+//!    into Bevy's asset system. Handles serialization and deserialization of dialogue data.
+//! 2. **Graph Layer**: Provides the core graph representation of dialogues, including nodes and connections.
+//!    Uses petgraph internally for efficient graph operations while exposing a dialogue-specific API.
+//! 3. **Runtime Layer**: Processes dialogues during gameplay, managing state transitions,
+//!    handling player choices, and controlling the flow between nodes.
+//! 4. **Event Layer**: Connects dialogues with game systems through a bidirectional event system.
+//!    Allows game systems to control dialogues and receive notifications about dialogue state changes.
+//! 5. **UI Layer**: Handles presentation and player interaction (provided separately or
+//!    implemented by the game using the dialogue events).
 //!
 //! ## Examples
 //!

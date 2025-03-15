@@ -40,31 +40,33 @@
 //! - **Action Nodes**: Trigger events or modify variables
 //! - **Jump Nodes**: Move to other parts of the dialogue
 //!
-//! ## Example Usage
-//!
-//! ```rust
-//! use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
-//!
-//! // Create a new dialogue graph
-//! let mut graph = DialogueGraph::new(NodeId(1))
-//!     .with_name("Simple Dialogue");
-//!     
-//! // Add a text node
-//! let text_node = DialogueNode::text(NodeId(1), "Hello there!")
-//!     .with_speaker("Guide")
-//!     .with_next(NodeId(2));
-//!     
-//! // Add a choice node
-//! let choice_node = DialogueNode::choice(NodeId(2))
-//!     .with_speaker("Guide")
-//!     .with_prompt("How would you like to respond?").unwrap()
-//!     .with_choice("Nice to meet you!", NodeId(3)).unwrap()
-//!     .with_choice("Goodbye.", NodeId(4)).unwrap();
-//!
-//! // Add nodes to the graph
-//! graph.add_node(text_node);
-//! graph.add_node(choice_node);
-//! ```
+/// ## Example Usage
+///
+/// ```rust
+/// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
+///
+/// // Create a new dialogue graph
+/// let mut graph = DialogueGraph::new(NodeId(1))
+///     .with_name("Simple Dialogue");
+///     
+/// // Add a text node
+/// let text_node = DialogueNode::text(NodeId(1), "Hello there!")
+///     .with_speaker("Guide");
+///     
+/// // Add a choice node
+/// let choice_node = DialogueNode::choice(NodeId(2))
+///     .with_speaker("Guide")
+///     .with_prompt("How would you like to respond?").unwrap();
+///
+/// // Add nodes to the graph
+/// graph.add_node(text_node);
+/// graph.add_node(choice_node);
+///
+/// // Connect nodes using the graph
+/// graph.add_edge(NodeId(1), NodeId(2), None).unwrap();
+/// graph.add_edge(NodeId(2), NodeId(3), Some("Nice to meet you!".to_string())).unwrap();
+/// graph.add_edge(NodeId(2), NodeId(4), Some("Goodbye.".to_string())).unwrap();
+/// ```
 
 mod dialogue_graph;
 pub mod node;

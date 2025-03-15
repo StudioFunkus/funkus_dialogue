@@ -40,31 +40,20 @@ use super::{Connection, ConnectionData, DialogueElement};
 /// let mut graph = DialogueGraph::new(NodeId(1))
 ///     .with_name("Simple Dialogue");
 ///
-/// // Add a text node
-/// let text_node = DialogueNode::text(NodeId(1), "Hello adventurer!")
-///     .with_speaker("Guide");
-/// graph.add_node(text_node);
+/// // Add nodes to the graph
+/// graph.add_node(DialogueNode::text(NodeId(1), "Hello adventurer!")
+///     .with_speaker("Guide"));
 ///
-/// // Add a choice node
-/// let choice_node = DialogueNode::choice(NodeId(2))
-///     .with_prompt("How do you respond?").unwrap()
-///     .with_choice("Greet back", NodeId(3)).unwrap()
-///     .with_choice("Ignore", NodeId(4)).unwrap();
-/// graph.add_node(choice_node);
+/// graph.add_node(DialogueNode::choice(NodeId(2))
+///     .with_prompt("How do you respond?").unwrap());
 ///
-/// // Add response nodes
 /// graph.add_node(DialogueNode::text(NodeId(3), "Nice to meet you too!"));
 /// graph.add_node(DialogueNode::text(NodeId(4), "..."));
 ///
-/// // Connect nodes
+/// // Connect nodes at the graph level
 /// graph.add_edge(NodeId(1), NodeId(2), None).unwrap();
-///
-/// // Traversing the graph
-/// let start = graph.get_start_node().unwrap();
-/// let next_nodes = graph.get_connected_nodes(start.id());
-///
-/// // Removing a node
-/// graph.remove_node(NodeId(4)).unwrap();
+/// graph.add_edge(NodeId(2), NodeId(3), Some("Greet back".to_string())).unwrap();
+/// graph.add_edge(NodeId(2), NodeId(4), Some("Ignore".to_string())).unwrap();
 /// ```
 #[derive(Debug, Clone, Reflect)]
 pub struct DialogueGraph {
@@ -84,6 +73,10 @@ pub struct DialogueGraph {
     pub name: Option<String>,
 }
 
+/// The serialization and deserialization process translates between the internal
+/// graph representation and a more human-readable JSON format. This allows dialogues
+/// to be defined in external tools and loaded into the game. The format focuses on
+/// clarity by separating nodes and connections into distinct sections.
 impl Serialize for DialogueGraph {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -369,45 +362,6 @@ impl DialogueGraph {
         self
     }
 
-    /// Add an edge (connection) between nodes.
-    ///
-    /// This method creates a directed edge from one node to another, optionally with a label.
-    /// It translates the NodeIds to petgraph's internal NodeIndices before adding the edge.
-    ///
-    /// # Parameters
-    ///
-    /// * `from_id` - The ID of the source node
-    /// * `to_id` - The ID of the target node
-    /// * `label` - Optional label for this connection
-    ///
-    /// # Returns
-    ///
-    /// Ok(()) if the edge was added successfully, or an error string if either node doesn't exist
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
-    ///
-    /// let mut graph = DialogueGraph::new(NodeId(1));
-    ///
-    /// // Add two nodes
-    /// graph.add_node(DialogueNode::text(NodeId(1), "First node"));
-    /// graph.add_node(DialogueNode::text(NodeId(2), "Second node"));
-    ///
-    /// // Connect them
-    /// let result = graph.add_edge(NodeId(1), NodeId(2), Some("Next".to_string()));
-    /// assert!(result.is_ok());
-    /// ```
-    pub fn add_edge(
-        &mut self,
-        from_id: NodeId,
-        to_id: NodeId,
-        label: Option<String>,
-    ) -> Result<(), String> {
-        self.connect(from_id, to_id, ConnectionData::new(label))
-    }
-
     /// Gets a node by its ID.
     ///
     /// This method translates the NodeId to petgraph's internal NodeIndex
@@ -495,10 +449,17 @@ impl DialogueGraph {
         for edge in self.graph.edge_indices() {
             if let Some((source_idx, target_idx)) = self.graph.edge_endpoints(edge) {
                 // Find the NodeId for the source
-                let source_id = self.node_indices.iter()
+                let source_id = self
+                    .node_indices
+                    .iter()
                     .find_map(|(id, &idx)| if idx == source_idx { Some(id) } else { None })
-                    .ok_or_else(|| format!("Internal error: Edge source index {:?} has no NodeId mapping", source_idx))?;
-                    
+                    .ok_or_else(|| {
+                        format!(
+                            "Internal error: Edge source index {:?} has no NodeId mapping",
+                            source_idx
+                        )
+                    })?;
+
                 // Check if the target node exists by attempting to get its weight
                 if self.graph.node_weight(target_idx).is_none() {
                     return Err(format!(
@@ -508,12 +469,12 @@ impl DialogueGraph {
                 }
             }
         }
-    
+
         // Check that the start node exists
         if !self.node_indices.contains_key(&self.start_node) {
             return Err(format!("Start node {:?} does not exist", self.start_node));
         }
-    
+
         // Check for unreachable nodes using petgraph's algorithms
         if let Some(&start_index) = self.node_indices.get(&self.start_node) {
             // Using Petgraph's reachability analysis
@@ -531,7 +492,7 @@ impl DialogueGraph {
                 }
             }
         }
-    
+
         Ok(())
     }
 
@@ -719,17 +680,33 @@ impl DialogueGraph {
 
     /// Connect two nodes with connection data.
     ///
-    /// This method creates a connection from one node to another with the specified data.
+    /// This method creates a connection from one node to another, specifying
+    /// how they relate (e.g., with a choice label or other properties).
     ///
     /// # Parameters
     ///
     /// * `from` - The ID of the source node
     /// * `to` - The ID of the target node  
-    /// * `data` - The connection data to store on the edge
+    /// * `data` - The connection data containing label and other properties
     ///
     /// # Returns
     ///
     /// Ok(()) if the connection was created successfully, or an error if either node doesn't exist
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, ConnectionData};
+    ///
+    /// let mut graph = DialogueGraph::new(NodeId(1));
+    /// // Add nodes...
+    ///
+    /// // Connect with a label
+    /// graph.connect(NodeId(1), NodeId(2), ConnectionData::new(Some("Next".to_string()))).unwrap();
+    ///
+    /// // Connect without a label
+    /// graph.connect(NodeId(2), NodeId(3), ConnectionData::new(None)).unwrap();
+    /// ```
     pub fn connect(
         &mut self,
         from: NodeId,
@@ -834,7 +811,7 @@ mod tests {
 
         // Add a few nodes
         graph.add_node(DialogueNode::text(NodeId(1), "Start").with_speaker("NPC"));
-        
+
         // Add choice node (without connections)
         let choice_node = DialogueNode::choice(NodeId(2))
             .with_prompt("Choose:")
@@ -845,9 +822,23 @@ mod tests {
         graph.add_node(DialogueNode::text(NodeId(4), "You chose B"));
 
         // Connect nodes using graph-based connections
-        graph.connect(NodeId(1), NodeId(2), ConnectionData::new(None)).unwrap();
-        graph.connect(NodeId(2), NodeId(3), ConnectionData::new(Some("Option A".to_string()))).unwrap();
-        graph.connect(NodeId(2), NodeId(4), ConnectionData::new(Some("Option B".to_string()))).unwrap();
+        graph
+            .connect(NodeId(1), NodeId(2), ConnectionData::new(None))
+            .unwrap();
+        graph
+            .connect(
+                NodeId(2),
+                NodeId(3),
+                ConnectionData::new(Some("Option A".to_string())),
+            )
+            .unwrap();
+        graph
+            .connect(
+                NodeId(2),
+                NodeId(4),
+                ConnectionData::new(Some("Option B".to_string())),
+            )
+            .unwrap();
 
         graph
     }
@@ -984,7 +975,7 @@ mod tests {
         assert!(node5.is_some());
 
         // Add a connection that uses node 5
-        graph.add_edge(NodeId(1), NodeId(5), None).unwrap();
+        graph.connect(NodeId(1), NodeId(5), ConnectionData::new(None)).unwrap();
 
         // Verify the connection works
         let connections = graph.get_connected_nodes(NodeId(1));
@@ -1012,7 +1003,7 @@ mod tests {
         assert!(graph.validate().is_err());
 
         // Connect nodes - should pass validation
-        graph.add_edge(NodeId(1), NodeId(2), None).unwrap();
+        graph.connect(NodeId(1), NodeId(2), ConnectionData::new(None)).unwrap();
         assert!(graph.validate().is_ok());
     }
 

@@ -27,28 +27,38 @@ use serde::{Deserialize, Serialize};
 /// ```json
 /// {
 ///   "graph": {
-///     "nodes": {
-///       "1": {
-///         "Text": {
-///           "base": {
-///             "id": 1,
-///             "connections": [
-///               {
-///                 "target_id": 2,
-///                 "label": null
-///               }
-///             ]
-///           },
-///           "text": "Hello there!",
-///           "speaker": "Guide",
-///           "portrait": null
-///         }
+///     "nodes": [
+///       {
+///         "type": "Text",
+///         "id": 1,
+///         "text": "Hello there!",
+///         "speaker": "Guide",
+///         "portrait": null
 ///       }
-///     },
+///     ],
+///     "connections": [
+///       {
+///         "from": 1,
+///         "to": 2,
+///         "label": null
+///       }
+///     ],
 ///     "start_node": 1,
 ///     "name": "Example Dialogue"
-///   },
-///   "name": "Example Dialogue"
+///   }
+/// }
+/// ```
+///
+/// # Loading with Bevy
+///
+/// ```rust
+/// // Load using Bevy's asset system
+/// fn setup(asset_server: Res<AssetServer>) {
+///     // Load a dialogue asset
+///     let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
+///     
+///     // The asset can then be accessed through the Assets<DialogueAsset> resource
+///     // once it has finished loading
 /// }
 /// ```
 #[derive(Asset, Debug, Clone, Reflect, Serialize, Deserialize)]
@@ -63,7 +73,8 @@ pub struct DialogueAsset {
 impl DialogueAsset {
     /// Creates a new dialogue asset from a dialogue graph.
     ///
-    /// This constructor extracts the name from the graph and sets it as the asset name.
+    /// This constructor copies the name from the graph's name field and uses it
+    /// as the asset name.
     ///
     /// # Parameters
     ///
@@ -80,6 +91,7 @@ impl DialogueAsset {
     ///
     /// let graph = DialogueGraph::new(NodeId(1)).with_name("My Dialogue");
     /// let asset = DialogueAsset::new(graph);
+    /// // The name is copied from the graph to the asset
     /// assert_eq!(asset.name, Some("My Dialogue".to_string()));
     /// ```
     pub fn new(graph: DialogueGraph) -> Self {

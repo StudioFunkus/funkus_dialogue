@@ -24,7 +24,8 @@ use super::node::{DialogueElement, NodeId, Connection};
 /// 
 /// DialogueNode is the core representation of different node types in the dialogue system.
 /// It uses Rust's enum pattern to represent different node variants directly, with each
-/// variant containing all the necessary fields for that node type.
+/// variant containing all the necessary fields for that node type. Connections between
+/// nodes are managed at the graph level, not within the nodes themselves.
 /// 
 /// # Variants
 /// 
@@ -34,13 +35,20 @@ use super::node::{DialogueElement, NodeId, Connection};
 /// # Example
 /// 
 /// ```rust
-/// use funkus_dialogue::graph::{DialogueNode, NodeId};
+/// use funkus_dialogue::graph::{DialogueGraph, DialogueNode, NodeId};
 /// 
 /// // Create a text node
 /// let text_node = DialogueNode::text(NodeId(1), "Hello, world!");
 /// 
-/// // Get the ID using the common interface
-/// assert_eq!(text_node.id(), NodeId(1));
+/// // Create a choice node
+/// let choice_node = DialogueNode::choice(NodeId(2))
+///     .with_prompt("Make a selection:").unwrap();
+///     
+/// // Connections are managed at the graph level
+/// let mut graph = DialogueGraph::new(NodeId(1));
+/// graph.add_node(text_node);
+/// graph.add_node(choice_node);
+/// graph.add_edge(NodeId(1), NodeId(2), None).unwrap();
 /// ```
 #[derive(Debug, Clone, Reflect, Serialize, Deserialize)]
 #[serde(crate = "serde")]
@@ -279,7 +287,8 @@ impl DialogueNode {
     /// 
     /// # Returns
     /// 
-    /// The node with the prompt set, or an error if not a Choice node
+    /// A Result containing the node with the prompt set if successful,
+    /// or an error message if this is not a Choice node
     /// 
     /// # Example
     /// 
