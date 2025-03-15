@@ -204,13 +204,15 @@ pub fn handle_dialogue_events(
     // Handle select choice events
     for ev in select_events.read() {
         if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
-            // MODIFIED: Allow choice selection while in either WaitingForChoice or ChoiceSelected state
+            // Allow choice selection while in either WaitingForChoice or ChoiceSelected state
             if runner.state == DialogueState::WaitingForChoice || matches!(runner.state, DialogueState::ChoiceSelected(_)) {
                 // Get the current node id
                 let Some(node_id) = runner.current_node_id else { continue };
                 
                 // Select the choice - this now also updates the state to ChoiceSelected
-                runner.select_choice(ev.choice_index);
+                if let Err(err) = runner.select_choice(ev.choice_index) {
+                    error!("Error selecting choice: {}", err);
+                }
                 
                 // Send choice made event
                 dialogue_choice_events.send(crate::events::DialogueChoiceMade {
