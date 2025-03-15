@@ -146,7 +146,7 @@ fn keyboard_input(
                                 border: UiRect::all(Val::Px(2.0)),
                                 ..default()
                             },
-                            BackgroundColor(Color::rgba(0.1, 0.1, 0.1, 0.8)),
+                            BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.8)),
                             DialogueDisplay,
                         ))
                         .with_children(|parent| {
@@ -384,9 +384,9 @@ fn display_dialogue(
                                                 ..default()
                                             },
                                             TextColor(if Some(i) == selected_index {
-                                                Color::rgb(1.0, 1.0, 0.5) // Highlight selected choice
+                                                Color::srgb(1.0, 1.0, 0.5) // Highlight selected choice
                                             } else {
-                                                Color::rgb(0.8, 0.8, 1.0)
+                                                Color::srgb(0.8, 0.8, 1.0)
                                             }),
                                             Node {
                                                 margin: UiRect::bottom(Val::Px(5.0)),
