@@ -53,6 +53,24 @@ pub struct Connection {
     pub label: Option<String>,
 }
 
+/// Data stored on connections between dialogue nodes.
+///
+/// This struct represents the properties of a connection between two nodes
+/// in the dialogue graph. It's stored on the edges of the underlying graph.
+#[derive(Debug, Clone, Reflect, Serialize, Deserialize)]
+#[serde(crate = "serde")]
+pub struct ConnectionData {
+    /// Optional label for this connection (used as choice text for choice nodes)
+    pub label: Option<String>,
+}
+
+impl ConnectionData {
+    /// Creates a new connection with an optional label
+    pub fn new(label: Option<String>) -> Self {
+        Self { label }
+    }
+}
+
 /// Trait that all dialogue node types must implement.
 ///
 /// The DialogueElement trait defines the common interface that all node types

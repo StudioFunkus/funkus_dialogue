@@ -2,127 +2,117 @@
   "graph": {
     "nodes": [
       {
-        "Text": {
-          "id": 1,
-          "connections": [
-            {
-              "target_id": 2,
-              "label": null
-            }
-          ],
-          "text": "Hello there! This is a test dialogue. Nice to meet you!",
-          "speaker": "Guide",
-          "portrait": null
-        }
+        "type": "Text",
+        "id": 1,
+        "text": "Hello there! This is a test dialogue. Nice to meet you!",
+        "speaker": "Guide",
+        "portrait": null
       },
       {
-        "Choice": {
-          "id": 2,
-          "connections": [
-            {
-              "target_id": 3,
-              "label": "Nice to meet you too!"
-            },
-            {
-              "target_id": 4,
-              "label": "What is this dialogue system?"
-            },
-            {
-              "target_id": 5,
-              "label": "Goodbye for now."
-            }
-          ],
-          "prompt": "How would you like to respond?",
-          "speaker": "Guide",
-          "portrait": null
-        }
+        "type": "Choice",
+        "id": 2,
+        "prompt": "How would you like to respond?",
+        "speaker": "Guide",
+        "portrait": null
       },
       {
-        "Text": {
-          "id": 3,
-          "connections": [
-            {
-              "target_id": 4,
-              "label": null
-            }
-          ],
-          "text": "I'm glad we're getting along! Let me tell you more about this dialogue system.",
-          "speaker": "Guide",
-          "portrait": null
-        }
+        "type": "Text",
+        "id": 3,
+        "text": "I'm glad we're getting along! Let me tell you more about this dialogue system.",
+        "speaker": "Guide",
+        "portrait": null
       },
       {
-        "Text": {
-          "id": 4,
-          "connections": [
-            {
-              "target_id": 6,
-              "label": null
-            }
-          ],
-          "text": "This is the Funkus Dialogue System for Bevy. It allows you to create interactive conversations with branching paths.",
-          "speaker": "Guide",
-          "portrait": null
-        }
+        "type": "Text",
+        "id": 4,
+        "text": "This is the Funkus Dialogue System for Bevy. It allows you to create interactive conversations with branching paths.",
+        "speaker": "Guide",
+        "portrait": null
       },
       {
-        "Text": {
-          "id": 5,
-          "connections": [],
-          "text": "Farewell! Come back when you want to talk more.",
-          "speaker": "Guide",
-          "portrait": null
-        }
+        "type": "Text",
+        "id": 5,
+        "text": "Farewell! Come back when you want to talk more.",
+        "speaker": "Guide",
+        "portrait": null
       },
       {
-        "Choice": {
-          "id": 6,
-          "connections": [
-            {
-              "target_id": 7,
-              "label": "How do I create dialogue?"
-            },
-            {
-              "target_id": 8,
-              "label": "What node types are available?"
-            },
-            {
-              "target_id": 5,
-              "label": "That's all I need to know."
-            }
-          ],
-          "prompt": "What would you like to know about?",
-          "speaker": "Guide",
-          "portrait": null
-        }
+        "type": "Choice",
+        "id": 6,
+        "prompt": "What would you like to know about?",
+        "speaker": "Guide",
+        "portrait": null
       },
       {
-        "Text": {
-          "id": 7,
-          "connections": [
-            {
-              "target_id": 6,
-              "label": null
-            }
-          ],
-          "text": "You can create dialogues by defining JSON files with nodes and connections, or eventually using a visual editor.",
-          "speaker": "Guide",
-          "portrait": null
-        }
+        "type": "Text",
+        "id": 7,
+        "text": "You can create dialogues by defining JSON files with nodes and connections, or eventually using a visual editor.",
+        "speaker": "Guide",
+        "portrait": null
       },
       {
-        "Text": {
-          "id": 8,
-          "connections": [
-            {
-              "target_id": 6,
-              "label": null
-            }
-          ],
-          "text": "The system supports text nodes for narration and choice nodes for player decisions. More types like conditions are planned!",
-          "speaker": "Guide",
-          "portrait": null
-        }
+        "type": "Text",
+        "id": 8,
+        "text": "The system supports text nodes for narration and choice nodes for player decisions. More types like conditions are planned!",
+        "speaker": "Guide",
+        "portrait": null
+      }
+    ],
+    "connections": [
+      {
+        "from": 1,
+        "to": 2,
+        "label": null
+      },
+      {
+        "from": 2,
+        "to": 3,
+        "label": "Nice to meet you too!"
+      },
+      {
+        "from": 2,
+        "to": 4,
+        "label": "What is this dialogue system?"
+      },
+      {
+        "from": 2,
+        "to": 5,
+        "label": "Goodbye for now."
+      },
+      {
+        "from": 3,
+        "to": 4,
+        "label": null
+      },
+      {
+        "from": 4,
+        "to": 6,
+        "label": null
+      },
+      {
+        "from": 6,
+        "to": 7,
+        "label": "How do I create dialogue?"
+      },
+      {
+        "from": 6,
+        "to": 8,
+        "label": "What node types are available?"
+      },
+      {
+        "from": 6,
+        "to": 5,
+        "label": "That's all I need to know."
+      },
+      {
+        "from": 7,
+        "to": 6,
+        "label": null
+      },
+      {
+        "from": 8,
+        "to": 6,
+        "label": null
       }
     ],
     "start_node": 1,

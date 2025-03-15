@@ -295,7 +295,10 @@ impl DialogueRunner {
             .ok_or(DialogueError::NodeNotFound(current_id))?;
 
         match current_node {
-            DialogueNode::Text { connections, .. } => {
+            DialogueNode::Text { .. } => {
+                // Get connections from the graph instead of the node
+                let connections = dialogue.graph.get_connected_nodes(current_id);
+
                 // A text node typically has 0 or 1 connections
                 if connections.is_empty() {
                     // End of dialogue
@@ -304,7 +307,7 @@ impl DialogueRunner {
                 }
 
                 // Move to the next node
-                let next_id = connections[0].target_id;
+                let next_id = connections[0].0;
                 self.current_node_id = Some(next_id);
 
                 // Update state based on the next node type
@@ -317,7 +320,7 @@ impl DialogueRunner {
                     return Err(DialogueError::NextNodeNotFound(next_id));
                 }
             }
-            DialogueNode::Choice { connections, .. } => {
+            DialogueNode::Choice { .. } => {
                 // For choice nodes, we need a selected choice
                 // Check if we're in the ChoiceSelected state
                 let choice_index = match self.state {
@@ -333,6 +336,9 @@ impl DialogueRunner {
                     }
                 };
 
+                // Get connections from the graph
+                let connections = dialogue.graph.get_connected_nodes(current_id);
+
                 if choice_index >= connections.len() {
                     return Err(DialogueError::InvalidChoiceIndex(
                         choice_index,
@@ -341,7 +347,7 @@ impl DialogueRunner {
                 }
 
                 // Move to the selected choice's target node
-                let next_id = connections[choice_index].target_id;
+                let next_id = connections[choice_index].0;
                 self.current_node_id = Some(next_id);
 
                 // Reset selected choice
