@@ -1,28 +1,28 @@
 //! # Runtime dialogue processing.
-//! 
+//!
 //! This module provides the components and systems for running dialogues at runtime.
-//! 
+//!
 //! ## Overview
-//! 
+//!
 //! The runtime module is responsible for:
-//! 
+//!
 //! - Processing dialogue graphs during gameplay
 //! - Managing dialogue state (current node, player choices)
 //! - Handling dialogue events (advancement, selection)
 //! - Transitioning between dialogue nodes
-//! 
+//!
 //! ## Key Components
-//! 
+//!
 //! - [`DialogueRunner`]: Component that processes and manages a dialogue
 //! - [`DialogueState`]: Enum describing the current state of a dialogue
 //! - Runtime systems for dialogue processing
-//! 
+//!
 //! ## Usage Example
-//! 
+//!
 //! ```rust
 //! use bevy::prelude::*;
 //! use funkus_dialogue::*;
-//! 
+//!
 //! fn setup(
 //!     mut commands: Commands,
 //!     asset_server: Res<AssetServer>,
