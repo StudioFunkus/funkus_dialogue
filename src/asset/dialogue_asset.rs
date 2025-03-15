@@ -1,29 +1,29 @@
 //! # DialogueAsset Definition
-//! 
+//!
 //! This module defines the core asset type for dialogue data.
 
+use crate::graph::DialogueGraph;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::graph::DialogueGraph;
 
 /// Asset type for dialogue data.
-/// 
+///
 /// `DialogueAsset` represents a complete dialogue that can be loaded from a file.
 /// It contains a dialogue graph that defines the structure of the dialogue, including
 /// all nodes, connections, and metadata.
-/// 
+///
 /// # Structure
-/// 
+///
 /// - `graph`: The dialogue graph containing all nodes and connections
 /// - `name`: Optional name to identify this dialogue
-/// 
+///
 /// # Serialization
-/// 
+///
 /// This type supports serialization and deserialization through serde, allowing
 /// dialogues to be defined in JSON files.
-/// 
+///
 /// # Example JSON Format
-/// 
+///
 /// ```json
 /// {
 ///   "graph": {
@@ -62,31 +62,28 @@ pub struct DialogueAsset {
 
 impl DialogueAsset {
     /// Creates a new dialogue asset from a dialogue graph.
-    /// 
+    ///
     /// This constructor extracts the name from the graph and sets it as the asset name.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `graph` - The dialogue graph to include in this asset
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A new DialogueAsset containing the provided graph
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use funkus_dialogue::{DialogueAsset, DialogueGraph, NodeId};
-    /// 
+    ///
     /// let graph = DialogueGraph::new(NodeId(1)).with_name("My Dialogue");
     /// let asset = DialogueAsset::new(graph);
     /// assert_eq!(asset.name, Some("My Dialogue".to_string()));
     /// ```
     pub fn new(graph: DialogueGraph) -> Self {
         let name = graph.name.clone();
-        Self {
-            graph,
-            name,
-        }
+        Self { graph, name }
     }
 }

@@ -1,5 +1,5 @@
 //! # Systems for dialogue processing.
-//! 
+//!
 //! This module provides the Bevy systems that handle dialogue runtime processing,
 //! including system setup, event handling, and dialogue state updates.
 
@@ -42,17 +42,17 @@ pub fn update_dialogue_runners(
         if runner.state == DialogueState::Inactive {
             continue;
         }
-        
+
         // Get the dialogue asset
         let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) else {
             // Asset not loaded yet
             continue;
         };
-        
+
         // Auto-advance text nodes if enabled
         if runner.state == DialogueState::ShowingText && runner.auto_advance {
             runner.auto_advance_timer.tick(time.delta());
-            
+
             if runner.auto_advance_timer.finished() {
                 if let Err(err) = runner.advance(dialogue) {
                     error!("Error advancing dialogue: {}", err);
@@ -126,19 +126,19 @@ pub fn handle_dialogue_events(
         if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
             // Set the dialogue handle
             runner.dialogue_handle = ev.dialogue_handle.clone();
-            
+
             // Get the dialogue asset
             if let Some(dialogue) = dialogue_assets.get(&ev.dialogue_handle) {
                 // Start the dialogue
                 runner.start(dialogue);
-                
+
                 // Send node activated event for the start node
                 if let Some(node_id) = runner.current_node_id {
                     node_activated_events.send(crate::events::DialogueNodeActivated {
                         entity: ev.entity,
                         node_id,
                     });
-                    
+
                     // Send dialogue started event
                     dialogue_started_events.send(crate::events::DialogueStarted {
                         entity: ev.entity,
@@ -148,10 +148,12 @@ pub fn handle_dialogue_events(
             }
         } else {
             // Create a new dialogue runner component
-            commands.entity(ev.entity).insert(DialogueRunner::new(ev.dialogue_handle.clone()));
+            commands
+                .entity(ev.entity)
+                .insert(DialogueRunner::new(ev.dialogue_handle.clone()));
         }
     }
-    
+
     // Handle stop dialogue events
     for ev in stop_events.read() {
         if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
@@ -160,19 +162,19 @@ pub fn handle_dialogue_events(
                 entity: ev.entity,
                 normal_exit: false,
             });
-            
+
             // Stop the dialogue
             runner.stop();
         }
     }
-    
+
     // Handle advance dialogue events
     for ev in advance_events.read() {
         if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
             // Get the dialogue asset
             if let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) {
                 let old_node_id = runner.current_node_id;
-                
+
                 // Advance the dialogue
                 match runner.advance(dialogue) {
                     Ok(()) => {
@@ -191,7 +193,7 @@ pub fn handle_dialogue_events(
                                 });
                             }
                         }
-                    },
+                    }
                     Err(err) => {
                         error!("Error advancing dialogue: {}", err);
                         runner.state = DialogueState::Error(err.to_string());
@@ -205,15 +207,19 @@ pub fn handle_dialogue_events(
     for ev in select_events.read() {
         if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
             // Allow choice selection while in either WaitingForChoice or ChoiceSelected state
-            if runner.state == DialogueState::WaitingForChoice || matches!(runner.state, DialogueState::ChoiceSelected(_)) {
+            if runner.state == DialogueState::WaitingForChoice
+                || matches!(runner.state, DialogueState::ChoiceSelected(_))
+            {
                 // Get the current node id
-                let Some(node_id) = runner.current_node_id else { continue };
-                
+                let Some(node_id) = runner.current_node_id else {
+                    continue;
+                };
+
                 // Select the choice - this now also updates the state to ChoiceSelected
                 if let Err(err) = runner.select_choice(ev.choice_index) {
                     error!("Error selecting choice: {}", err);
                 }
-                
+
                 // Send choice made event
                 dialogue_choice_events.send(crate::events::DialogueChoiceMade {
                     entity: ev.entity,
@@ -248,9 +254,8 @@ pub fn handle_dialogue_events(
 /// }
 /// ```
 pub fn setup_dialogue_systems(app: &mut App) {
-    app.configure_sets(Update, DialogueSystemSet)
-        .add_systems(Update, (
-            update_dialogue_runners,
-            handle_dialogue_events,
-        ).in_set(DialogueSystemSet));
+    app.configure_sets(Update, DialogueSystemSet).add_systems(
+        Update,
+        (update_dialogue_runners, handle_dialogue_events).in_set(DialogueSystemSet),
+    );
 }

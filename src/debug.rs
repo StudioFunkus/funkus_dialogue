@@ -1,7 +1,7 @@
 //! Debug utilities for the dialogue system.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiPlugin, EguiContexts};
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 use crate::{
     graph::NodeId,
@@ -15,12 +15,12 @@ impl Plugin for DialogueDebugPlugin {
     fn build(&self, app: &mut App) {
         // Make sure EguiPlugin is added
         app.add_plugins(EguiPlugin)
-           .register_type::<DialogueState>()
-           .register_type::<NodeId>()
-           .register_type::<Option<NodeId>>()
-           .init_resource::<DialogueDebugState>()
-           .add_systems(Update, debug_ui_system);
-        
+            .register_type::<DialogueState>()
+            .register_type::<NodeId>()
+            .register_type::<Option<NodeId>>()
+            .init_resource::<DialogueDebugState>()
+            .add_systems(Update, debug_ui_system);
+
         info!("Dialogue Debug UI enabled - press F1 to toggle");
     }
 }
@@ -44,9 +44,12 @@ fn debug_ui_system(
     // Toggle debug UI with F1
     if keyboard_input.just_pressed(KeyCode::F1) {
         state.visible = !state.visible;
-        info!("Dialogue Debug UI {}", if state.visible { "shown" } else { "hidden" });
+        info!(
+            "Dialogue Debug UI {}",
+            if state.visible { "shown" } else { "hidden" }
+        );
     }
-    
+
     // Skip if UI is hidden
     if !state.visible {
         return;
@@ -55,7 +58,7 @@ fn debug_ui_system(
     // Create a very simple debug window
     egui::Window::new("Dialogue Debug").show(contexts.ctx_mut(), |ui| {
         ui.heading("Dialogue Entities");
-        
+
         // List all dialogue entities
         for (entity, runner, name) in dialogue_runners.iter() {
             let text = format!("{} ({:?}) - State: {:?}", name, entity, runner.state);
@@ -63,7 +66,7 @@ fn debug_ui_system(
                 state.selected_entity = Some(entity);
             }
         }
-        
+
         if dialogue_runners.is_empty() {
             ui.label("No dialogue entities found");
         }
