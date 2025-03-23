@@ -1,3 +1,10 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/funkus_dialogue_core",
+    "crates/funkus_dialogue_ui",
+]
+
 [package]
 name = "funkus_dialogue"
 version = "0.1.0"
@@ -6,31 +13,16 @@ description = "A comprehensive dialogue system for the Bevy game engine"
 license = "Apache-2.0"
 repository = "https://github.com/StudioFunkus/funkus_dialogue"
 homepage = "https://github.com/StudioFunkus/funkus_dialogue"
-readme = "README.md"
-keywords = ["bevy", "gamedev", "dialogue", "narrative"]
-categories = ["game-development"]
-
-[profile.dev]
-opt-level = 1
-
-[profile.dev.package."*"]
-opt-level = 3
-
-[features]
-default = []
-debug_ui = ["bevy_egui"]
-editor = ["debug_ui", "bevy-inspector-egui"]
-full = ["editor"]
+publish = false
 
 [dependencies]
-bevy = { version = "0.15", default-features = false }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-thiserror = { version = "2", default-features = false }
-bevy_common_assets = { version = "0.12", features = ["json", "ron"] }
-bevy-inspector-egui = { version = "0.29", optional = true }
-bevy_egui = { version = "0.33", optional = true }
-petgraph = "0.7"
-
-[dev-dependencies]
 bevy = "0.15"
+funkus_dialogue_core = { path = "crates/funkus_dialogue_core" }
+funkus_dialogue_ui = { path = "crates/funkus_dialogue_ui" }
+
+[[example]]
+name = "simple_dialogue"
+path = "examples/simple_dialogue.rs"
+
+[features]
+debug_ui = ["funkus_dialogue_core/debug_ui"]
