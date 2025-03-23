@@ -1,0 +1,15 @@
+[package]
+name = "funkus_dialogue_ui"
+version = "0.1.0"
+edition = "2021"
+description = "Default UI implementation for the Bevy dialogue system"
+license = "Apache-2.0"
+repository = "https://github.com/StudioFunkus/funkus_dialogue"
+homepage = "https://github.com/StudioFunkus/funkus_dialogue"
+
+[dependencies]
+bevy = { version = "0.15", default-features = false }
+funkus_dialogue_core = { path = "../funkus_dialogue_core", version = "0.1.0" }
+
+[dev-dependencies]
+bevy = "0.15"

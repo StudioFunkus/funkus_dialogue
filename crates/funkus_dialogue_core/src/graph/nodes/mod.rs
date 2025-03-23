@@ -18,7 +18,7 @@
 use bevy::prelude::*;
 use serde::{Serialize, Deserialize};
 
-use super::node::{DialogueElement, NodeId, Connection};
+use super::node::{DialogueElement, NodeId};
 
 /// Enum containing all supported node types.
 /// 

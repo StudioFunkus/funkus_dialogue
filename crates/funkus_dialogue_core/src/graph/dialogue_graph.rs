@@ -11,7 +11,7 @@ use std::collections::HashMap;
 
 use super::node::NodeId;
 use super::nodes::DialogueNode;
-use super::{Connection, ConnectionData, DialogueElement};
+use super::{ConnectionData, DialogueElement};
 
 /// Represents a complete dialogue graph with nodes and metadata.
 ///
