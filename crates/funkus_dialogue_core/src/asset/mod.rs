@@ -7,7 +7,7 @@
 //! The asset system is responsible for:
 //!
 //! - Defining the `DialogueAsset` type that represents dialogue data
-//! - Loading dialogue data from JSON files
+//! - Loading dialogue data from file
 //! - Providing access to dialogue data for the runtime system
 //!
 //! ## Key Components
@@ -20,7 +20,7 @@
 //!
 //! ```rust
 //! fn setup(asset_server: Res<AssetServer>) {
-//!     let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
+//!     let dialogue_handle = asset_server.load("dialogues/example.dialogue.ron");
 //! }
 //! ```
 

@@ -20,45 +20,19 @@ use serde::{Deserialize, Serialize};
 /// # Serialization
 ///
 /// This type supports serialization and deserialization through serde, allowing
-/// dialogues to be defined in JSON files.
+/// dialogues to be defined in RON files.
 ///
-/// # Example JSON Format
+/// # Example RON Format
 ///
-/// ```json
-/// {
-///   "graph": {
-///     "nodes": [
-///       {
-///         "type": "Text",
-///         "id": 1,
-///         "text": "Hello there!",
-///         "speaker": "Guide",
-///         "portrait": null
-///       }
-///     ],
-///     "connections": [
-///       {
-///         "from": 1,
-///         "to": 2,
-///         "label": null
-///       }
-///     ],
-///     "start_node": 1,
-///     "name": "Example Dialogue"
-///   }
-/// }
+/// ```ron
+/// TODO: Add example
 /// ```
 ///
 /// # Loading with Bevy
 ///
 /// ```rust
-/// // Load using Bevy's asset system
 /// fn setup(asset_server: Res<AssetServer>) {
-///     // Load a dialogue asset
-///     let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
-///     
-///     // The asset can then be accessed through the Assets<DialogueAsset> resource
-///     // once it has finished loading
+///     let dialogue_handle = asset_server.load("dialogues/example.dialogue.ron");
 /// }
 /// ```
 #[derive(Asset, Debug, Clone, Reflect, Serialize, Deserialize)]
@@ -66,16 +40,9 @@ use serde::{Deserialize, Serialize};
 pub struct DialogueAsset {
     /// The dialogue graph containing all nodes and connections
     pub graph: DialogueGraph,
-    /// Optional name to identify this dialogue
-    pub name: Option<String>,
 }
 
 impl DialogueAsset {
-    /// Creates a new dialogue asset from a dialogue graph.
-    ///
-    /// This constructor copies the name from the graph's name field and uses it
-    /// as the asset name.
-    ///
     /// # Parameters
     ///
     /// * `graph` - The dialogue graph to include in this asset
@@ -87,15 +54,10 @@ impl DialogueAsset {
     /// # Example
     ///
     /// ```rust
-    /// use funkus_dialogue::{DialogueAsset, DialogueGraph, NodeId};
-    ///
     /// let graph = DialogueGraph::new(NodeId(1)).with_name("My Dialogue");
     /// let asset = DialogueAsset::new(graph);
-    /// // The name is copied from the graph to the asset
-    /// assert_eq!(asset.name, Some("My Dialogue".to_string()));
     /// ```
     pub fn new(graph: DialogueGraph) -> Self {
-        let name = graph.name.clone();
-        Self { graph, name }
+        Self { graph }
     }
 }

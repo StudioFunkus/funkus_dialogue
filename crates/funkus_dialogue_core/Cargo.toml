@@ -14,7 +14,7 @@ serde_json = "1.0"
 thiserror = { version = "2", default-features = false }
 bevy_common_assets = { version = "0.13", features = ["json", "ron"] }
 petgraph = "0.7"
-bevy_egui = { version = "0.33", optional = true }
+bevy_egui = { version = "0.34", optional = true }
 
 [dev-dependencies]
 bevy = "0.16"

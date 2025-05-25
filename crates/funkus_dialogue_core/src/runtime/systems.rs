@@ -138,13 +138,13 @@ pub fn handle_dialogue_events(
 
                 // Send node activated event for the start node
                 if let Some(node_id) = runner.current_node_id {
-                    node_activated_events.send(crate::events::DialogueNodeActivated {
+                    node_activated_events.write(crate::events::DialogueNodeActivated {
                         entity: ev.entity,
                         node_id,
                     });
 
                     // Send dialogue started event
-                    dialogue_started_events.send(crate::events::DialogueStarted {
+                    dialogue_started_events.write(crate::events::DialogueStarted {
                         entity: ev.entity,
                         start_node_id: node_id,
                     });
@@ -162,7 +162,7 @@ pub fn handle_dialogue_events(
     for ev in stop_events.read() {
         if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
             // Send dialogue ended event
-            dialogue_ended_events.send(crate::events::DialogueEnded {
+            dialogue_ended_events.write(crate::events::DialogueEnded {
                 entity: ev.entity,
                 normal_exit: false,
             });
@@ -184,14 +184,14 @@ pub fn handle_dialogue_events(
                     Ok(()) => {
                         if runner.state == DialogueState::Finished {
                             // Send dialogue ended event
-                            dialogue_ended_events.send(crate::events::DialogueEnded {
+                            dialogue_ended_events.write(crate::events::DialogueEnded {
                                 entity: ev.entity,
                                 normal_exit: true,
                             });
                         } else if runner.current_node_id != old_node_id {
                             // Send node activated event
                             if let Some(node_id) = runner.current_node_id {
-                                node_activated_events.send(crate::events::DialogueNodeActivated {
+                                node_activated_events.write(crate::events::DialogueNodeActivated {
                                     entity: ev.entity,
                                     node_id,
                                 });
@@ -225,7 +225,7 @@ pub fn handle_dialogue_events(
                 }
 
                 // Send choice made event
-                dialogue_choice_events.send(crate::events::DialogueChoiceMade {
+                dialogue_choice_events.write(crate::events::DialogueChoiceMade {
                     entity: ev.entity,
                     node_id,
                     choice_index: ev.choice_index,

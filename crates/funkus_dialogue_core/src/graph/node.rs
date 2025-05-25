@@ -8,9 +8,7 @@ use serde::{Deserialize, Serialize};
 /// Unique identifier for a node in a dialogue graph.
 ///
 /// NodeId is a simple wrapper around a u32 that provides type safety
-/// and clarity when handling node identifiers. Using a dedicated type
-/// instead of raw integers helps prevent errors and makes the code more
-/// self-documenting.
+/// and clarity when handling node identifiers.
 ///
 /// # Example
 ///
@@ -22,36 +20,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect, Serialize, Deserialize)]
 #[serde(crate = "serde")]
 pub struct NodeId(pub u32);
-
-/// Connection from one node to another.
-///
-/// A Connection represents a directed edge in the dialogue graph,
-/// potentially with a label. For choice nodes, the label typically
-/// represents the text of the choice option.
-///
-/// # Fields
-///
-/// * `target_id` - The ID of the target node
-/// * `label` - Optional label for this connection
-///
-/// # Example
-///
-/// ```rust
-/// use funkus_dialogue::graph::{NodeId, Connection};
-///
-/// let connection = Connection {
-///     target_id: NodeId(2),
-///     label: Some("Go to the castle".to_string()),
-/// };
-/// ```
-#[derive(Debug, Clone, Reflect, Serialize, Deserialize)]
-#[serde(crate = "serde")]
-pub struct Connection {
-    /// The ID of the target node.
-    pub target_id: NodeId,
-    /// Optional label for this connection.
-    pub label: Option<String>,
-}
 
 /// Data stored on connections between dialogue nodes.
 ///

@@ -95,7 +95,7 @@ pub use events::{
     AdvanceDialogue, DialogueChoiceMade, DialogueEnded, DialogueNodeActivated, DialogueStarted,
     SelectDialogueChoice, StartDialogue, StopDialogue,
 };
-pub use graph::{Connection, DialogueGraph, DialogueNode, NodeId};
+pub use graph::{DialogueGraph, DialogueNode, NodeId};
 pub use runtime::{DialogueRunner, DialogueState};
 
 /// Plugin that sets up the dialogue system components, assets, and systems.

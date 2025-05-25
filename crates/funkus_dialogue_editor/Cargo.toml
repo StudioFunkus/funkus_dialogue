@@ -1,0 +1,19 @@
+[package]
+name = "funkus_dialogue_editor"
+version = "0.1.0"
+edition = "2021"
+description = "Visual node-based editor for the Bevy dialogue system"
+license = "Apache-2.0"
+repository = "https://github.com/StudioFunkus/funkus_dialogue"
+homepage = "https://github.com/StudioFunkus/funkus_dialogue"
+
+[dependencies]
+bevy = { version = "0.16", default-features = false, features = ["bevy_asset", "bevy_winit", "bevy_core_pipeline", "bevy_render", "bevy_sprite", "bevy_text", "bevy_ui"] }
+bevy_egui = "0.34"
+egui-snarl = "0.7"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+funkus_dialogue_core = { path = "../funkus_dialogue_core", version = "0.1.0" }
+
+[dev-dependencies]
+bevy = "0.16"

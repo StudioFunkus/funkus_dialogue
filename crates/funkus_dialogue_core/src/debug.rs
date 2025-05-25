@@ -1,7 +1,7 @@
 //! Debug utilities for the dialogue system.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPlugin};
+use bevy_egui::{EguiContextPass, EguiPlugin};
 
 use crate::{
     graph::NodeId,

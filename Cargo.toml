@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/funkus_dialogue_core",
     "crates/funkus_dialogue_ui",
+    "crates/funkus_dialogue_editor",
 ]
 
 [package]
@@ -19,10 +20,23 @@ publish = false
 bevy = "0.16"
 funkus_dialogue_core = { path = "crates/funkus_dialogue_core" }
 funkus_dialogue_ui = { path = "crates/funkus_dialogue_ui" }
+funkus_dialogue_editor = { path = "crates/funkus_dialogue_editor", optional = true }
 
 [[example]]
 name = "simple_dialogue"
 path = "examples/simple_dialogue.rs"
 
+[[example]]
+name = "dialogue_editor"
+path = "examples/dialogue_editor.rs"
+required-features = ["editor"]
+
+[[example]]
+name = "editor_with_preview"
+path = "examples/editor_with_preview.rs"
+required-features = ["editor"]
+
 [features]
+default = []
 debug_ui = ["funkus_dialogue_core/debug_ui"]
+editor = ["dep:funkus_dialogue_editor"]
