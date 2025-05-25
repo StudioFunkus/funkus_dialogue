@@ -1,6 +1,6 @@
 # Bevy Dialogue System (funkus_dialogue)
 
-A comprehensive dialogue system for creating interactive narratives in games built with the Bevy engine (0.15+).
+A comprehensive dialogue system for creating interactive narratives in games built with the Bevy engine (0.16+).
 
 ## Status
 

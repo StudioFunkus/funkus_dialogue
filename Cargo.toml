@@ -16,7 +16,7 @@ homepage = "https://github.com/StudioFunkus/funkus_dialogue"
 publish = false
 
 [dependencies]
-bevy = "0.15"
+bevy = "0.16"
 funkus_dialogue_core = { path = "crates/funkus_dialogue_core" }
 funkus_dialogue_ui = { path = "crates/funkus_dialogue_ui" }
 

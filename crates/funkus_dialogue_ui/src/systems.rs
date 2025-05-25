@@ -35,7 +35,7 @@ pub fn display_dialogue(
             }
 
             for choices_entity in choices_query.iter() {
-                commands.entity(choices_entity).despawn_descendants();
+                commands.entity(choices_entity).despawn_related::<Children>();
             }
 
             continue;
@@ -64,7 +64,7 @@ pub fn display_dialogue(
 
                             // Clear choices
                             for choices_entity in choices_query.iter() {
-                                commands.entity(choices_entity).despawn_descendants();
+                                commands.entity(choices_entity).despawn_related::<Children>();
                             }
                         }
                         DialogueNode::Choice {
@@ -98,7 +98,7 @@ pub fn display_dialogue(
                             let connections = dialogue.graph.get_connected_nodes(node_id);
 
                             for choices_entity in choices_query.iter() {
-                                commands.entity(choices_entity).despawn_descendants();
+                                commands.entity(choices_entity).despawn_related::<Children>();
 
                                 // Add choice buttons
                                 for (i, (_, label)) in connections.iter().enumerate() {
