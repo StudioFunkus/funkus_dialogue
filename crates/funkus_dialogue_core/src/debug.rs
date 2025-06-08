@@ -1,7 +1,7 @@
 //! Debug utilities for the dialogue system.
 
 use bevy::prelude::*;
-use bevy_egui::{EguiContextPass, EguiPlugin};
+use bevy_egui::{egui, EguiContexts, EguiPlugin};
 
 use crate::{
     graph::NodeId,
@@ -14,12 +14,14 @@ pub struct DialogueDebugPlugin;
 impl Plugin for DialogueDebugPlugin {
     fn build(&self, app: &mut App) {
         // Make sure EguiPlugin is added
-        app.add_plugins(EguiPlugin)
-            .register_type::<DialogueState>()
-            .register_type::<NodeId>()
-            .register_type::<Option<NodeId>>()
-            .init_resource::<DialogueDebugState>()
-            .add_systems(Update, debug_ui_system);
+        app.add_plugins(EguiPlugin {
+            enable_multipass_for_primary_context: true,
+        })
+        .register_type::<DialogueState>()
+        .register_type::<NodeId>()
+        .register_type::<Option<NodeId>>()
+        .init_resource::<DialogueDebugState>()
+        .add_systems(Update, debug_ui_system);
 
         info!("Dialogue Debug UI enabled - press F1 to toggle");
     }

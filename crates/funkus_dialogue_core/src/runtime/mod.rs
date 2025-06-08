@@ -38,7 +38,7 @@
 //!     let dialogue_handle = asset_server.load("dialogues/npc.dialogue.json");
 //!     
 //!     // Start the dialogue
-//!     start_events.send(StartDialogue {
+//!     start_events.write(StartDialogue {
 //!         entity,
 //!         dialogue_handle,
 //!     });

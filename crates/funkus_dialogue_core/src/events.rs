@@ -44,7 +44,7 @@
 //!     if keyboard.just_pressed(KeyCode::E) {
 //!         if let Ok(player) = entity.get_single() {
 //!             // Request to start a dialogue
-//!             start_events.send(StartDialogue {
+//!             start_events.write(StartDialogue {
 //!                 entity: player,
 //!                 dialogue_handle: Handle::default(), // Use actual handle
 //!             });
@@ -54,7 +54,7 @@
 //!     // Advance dialogue when space is pressed
 //!     if keyboard.just_pressed(KeyCode::Space) {
 //!         if let Ok(player) = entity.get_single() {
-//!             advance_events.send(AdvanceDialogue {
+//!             advance_events.write(AdvanceDialogue {
 //!                 entity: player,
 //!             });
 //!         }
@@ -228,7 +228,7 @@ pub struct DialogueEnded {
 /// ) {
 ///     if keyboard.just_pressed(KeyCode::Space) {
 ///         for entity in dialogue_entities.iter() {
-///             advance_events.send(AdvanceDialogue {
+///             advance_events.write(AdvanceDialogue {
 ///                 entity,
 ///             });
 ///         }
@@ -275,7 +275,7 @@ pub struct AdvanceDialogue {
 ///                 };
 ///                 
 ///                 if keyboard.just_pressed(key) {
-///                     select_events.send(SelectDialogueChoice {
+///                     select_events.write(SelectDialogueChoice {
 ///                         entity,
 ///                         choice_index: i,
 ///                     });
@@ -326,7 +326,7 @@ pub struct SelectDialogueChoice {
 ///                 let dialogue_handle = asset_server.load("dialogues/npc.dialogue.json");
 ///                 
 ///                 // Start the dialogue on the player entity
-///                 start_events.send(StartDialogue {
+///                 start_events.write(StartDialogue {
 ///                     entity: player,
 ///                     dialogue_handle,
 ///                 });
@@ -365,7 +365,7 @@ pub struct StartDialogue {
 /// ) {
 ///     if keyboard.just_pressed(KeyCode::Escape) {
 ///         for entity in dialogue_query.iter() {
-///             stop_events.send(StopDialogue {
+///             stop_events.write(StopDialogue {
 ///                 entity,
 ///             });
 ///         }

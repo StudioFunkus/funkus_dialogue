@@ -23,7 +23,6 @@ fn main() {
     .add_systems(Update, keyboard_input);
 
     // Conditionally add the debug plugin if the feature is enabled
-    #[cfg(feature = "debug_ui")]
     app.add_plugins(DialogueDebugBundle);
 
     app.run();
@@ -121,7 +120,7 @@ fn keyboard_input(
             // Get the dialogue entity
             if let Some((entity, _)) = dialogue_query.iter().next() {
                 // Start the dialogue
-                start_events.send(StartDialogue {
+                start_events.write(StartDialogue {
                     entity,
                     dialogue_handle: dialogue_to_start.0.clone(),
                 });
@@ -153,11 +152,11 @@ fn keyboard_input(
             match runner.state {
                 DialogueState::ShowingText => {
                     // Normal text advancement
-                    advance_events.send(AdvanceDialogue { entity });
+                    advance_events.write(AdvanceDialogue { entity });
                 }
                 DialogueState::ChoiceSelected(_) => {
                     // Advance after a choice is selected
-                    advance_events.send(AdvanceDialogue { entity });
+                    advance_events.write(AdvanceDialogue { entity });
                 }
                 _ => {
                     // No action for other states
@@ -167,7 +166,7 @@ fn keyboard_input(
 
         // Escape to stop
         if keyboard_input.just_pressed(KeyCode::Escape) {
-            stop_events.send(StopDialogue { entity });
+            stop_events.write(StopDialogue { entity });
         }
 
         // Number keys for choices - allow changing choice even after initial selection
@@ -190,7 +189,7 @@ fn keyboard_input(
 
                 if keyboard_input.just_pressed(key) {
                     // Only send the selection event - don't advance immediately
-                    select_events.send(SelectDialogueChoice {
+                    select_events.write(SelectDialogueChoice {
                         entity,
                         choice_index: i,
                     });

@@ -38,5 +38,4 @@ required-features = ["editor"]
 
 [features]
 default = []
-debug_ui = ["funkus_dialogue_core/debug_ui"]
 editor = ["dep:funkus_dialogue_editor"]

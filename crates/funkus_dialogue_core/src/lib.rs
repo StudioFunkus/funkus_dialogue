@@ -45,7 +45,7 @@
 //!     let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
 //!     
 //!     // Start the dialogue
-//!     start_events.send(funkus_dialogue::StartDialogue {
+//!     start_events.write(funkus_dialogue::StartDialogue {
 //!         entity,
 //!         dialogue_handle,
 //!     });
@@ -84,12 +84,10 @@ pub mod graph;
 mod runtime;
 
 // Conditionally include the debug module
-#[cfg(feature = "debug_ui")]
 mod debug;
 
 // Re-exports for public API
 pub use asset::DialogueAsset;
-#[cfg(feature = "debug_ui")]
 pub use debug::DialogueDebugPlugin;
 pub use events::{
     AdvanceDialogue, DialogueChoiceMade, DialogueEnded, DialogueNodeActivated, DialogueStarted,
@@ -161,10 +159,8 @@ impl Plugin for DialoguePlugin {
 ///         .run();
 /// }
 /// ```
-#[cfg(feature = "debug_ui")]
 pub struct DialogueDebugBundle;
 
-#[cfg(feature = "debug_ui")]
 impl Plugin for DialogueDebugBundle {
     fn build(&self, app: &mut App) {
         app.add_plugins(debug::DialogueDebugPlugin);
