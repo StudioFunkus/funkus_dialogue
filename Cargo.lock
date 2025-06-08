@@ -2417,7 +2417,6 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_common_assets",
- "bevy_egui",
  "petgraph",
  "serde",
  "serde_json",

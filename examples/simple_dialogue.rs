@@ -22,9 +22,6 @@ fn main() {
     .add_systems(Startup, setup)
     .add_systems(Update, keyboard_input);
 
-    // Conditionally add the debug plugin if the feature is enabled
-    app.add_plugins(DialogueDebugBundle);
-
     app.run();
 }
 /// Sets up the example scene.

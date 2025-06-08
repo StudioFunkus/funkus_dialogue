@@ -83,12 +83,9 @@ mod events;
 pub mod graph;
 mod runtime;
 
-// Conditionally include the debug module
-pub mod debug;
 
 // Re-exports for public API
 pub use asset::DialogueAsset;
-pub use debug::DialogueDebugPlugin;
 pub use events::{
     AdvanceDialogue, DialogueChoiceMade, DialogueEnded, DialogueNodeActivated, DialogueStarted,
     SelectDialogueChoice, StartDialogue, StopDialogue,
@@ -142,27 +139,5 @@ impl Plugin for DialoguePlugin {
 
         // Set up dialogue systems
         runtime::setup_dialogue_systems(app);
-    }
-}
-
-/// Plugin that includes the dialogue system debug tools.
-///
-/// # Example
-///
-/// ```rust
-/// use bevy::prelude::*;
-/// use funkus_dialogue_core::{DialogueDebugBundle, DialoguePlugin};
-///
-/// fn main() {
-///     App::new()
-///         .add_plugins((DefaultPlugins, DialoguePlugin, DialogueDebugBundle))
-///         .run();
-/// }
-/// ```
-pub struct DialogueDebugBundle;
-
-impl Plugin for DialogueDebugBundle {
-    fn build(&self, app: &mut App) {
-        app.add_plugins(debug::DialogueDebugPlugin);
     }
 }
