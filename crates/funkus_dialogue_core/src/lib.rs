@@ -84,7 +84,7 @@ pub mod graph;
 mod runtime;
 
 // Conditionally include the debug module
-mod debug;
+pub mod debug;
 
 // Re-exports for public API
 pub use asset::DialogueAsset;
