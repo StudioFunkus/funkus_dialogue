@@ -13,15 +13,16 @@ pub struct DialogueDebugPlugin;
 
 impl Plugin for DialogueDebugPlugin {
     fn build(&self, app: &mut App) {
-        // Make sure EguiPlugin is added
-        app.add_plugins(EguiPlugin {
-            enable_multipass_for_primary_context: true,
-        })
-        .register_type::<DialogueState>()
-        .register_type::<NodeId>()
-        .register_type::<Option<NodeId>>()
-        .init_resource::<DialogueDebugState>()
-        .add_systems(Update, debug_ui_system);
+        if !app.is_plugin_added::<EguiPlugin>() {
+            app.add_plugins(EguiPlugin {
+                enable_multipass_for_primary_context: true,
+            });
+        }
+        app.register_type::<DialogueState>()
+            .register_type::<NodeId>()
+            .register_type::<Option<NodeId>>()
+            .init_resource::<DialogueDebugState>()
+            .add_systems(Update, debug_ui_system);
 
         info!("Dialogue Debug UI enabled - press F1 to toggle");
     }
