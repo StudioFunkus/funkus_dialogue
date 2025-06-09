@@ -81,7 +81,7 @@ mod asset;
 mod error;
 mod events;
 pub mod graph;
-mod runtime;
+pub mod runtime;
 
 
 // Re-exports for public API
