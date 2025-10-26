@@ -1,6 +1,7 @@
 //! A simple example demonstrating basic dialogue functionality with debugging tools.
 
 use bevy::prelude::*;
+use bevy::window::WindowResolution;
 use funkus_dialogue_core::*;
 use funkus_dialogue_ui::*;
 
@@ -11,7 +12,7 @@ fn main() {
         DefaultPlugins.set(WindowPlugin {
             primary_window: Some(Window {
                 title: "Dialogue System Example (with Debug UI)".to_string(),
-                resolution: (1280.0, 720.0).into(),
+                resolution: WindowResolution::new(1280, 720),
                 ..default()
             }),
             ..default()
@@ -109,10 +110,10 @@ fn keyboard_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     dialogue_to_start: Option<Res<DialogueToStart>>,
     mut dialogue_query: Query<(Entity, &mut DialogueRunner)>,
-    mut advance_events: EventWriter<AdvanceDialogue>,
-    mut select_events: EventWriter<SelectDialogueChoice>,
-    mut start_events: EventWriter<StartDialogue>,
-    mut stop_events: EventWriter<StopDialogue>,
+    mut advance_events: MessageWriter<AdvanceDialogue>,
+    mut select_events: MessageWriter<SelectDialogueChoice>,
+    mut start_events: MessageWriter<StartDialogue>,
+    mut stop_events: MessageWriter<StopDialogue>,
     text_query: Query<Entity, With<LoadingText>>,
 ) {
     // Check if we need to start the dialogue
@@ -121,7 +122,7 @@ fn keyboard_input(
             // Get the dialogue entity
             if let Some((entity, _)) = dialogue_query.iter().next() {
                 // Start the dialogue
-                start_events.send(StartDialogue {
+                start_events.write(StartDialogue {
                     entity,
                     dialogue_handle: dialogue_to_start.0.clone(),
                 });
@@ -153,11 +154,11 @@ fn keyboard_input(
             match runner.state {
                 DialogueState::ShowingText => {
                     // Normal text advancement
-                    advance_events.send(AdvanceDialogue { entity });
+                    advance_events.write(AdvanceDialogue { entity });
                 }
                 DialogueState::ChoiceSelected(_) => {
                     // Advance after a choice is selected
-                    advance_events.send(AdvanceDialogue { entity });
+                    advance_events.write(AdvanceDialogue { entity });
                 }
                 _ => {
                     // No action for other states
@@ -167,14 +168,31 @@ fn keyboard_input(
 
         // Escape to stop
         if keyboard_input.just_pressed(KeyCode::Escape) {
-            stop_events.send(StopDialogue { entity });
+            stop_events.write(StopDialogue { entity });
         }
 
         // Number keys for choices - allow changing choice even after initial selection
         if runner.state == DialogueState::WaitingForChoice
             || matches!(runner.state, DialogueState::ChoiceSelected(_))
         {
+            let choice_count = runner
+                .current_node_id
+                .and_then(|node_id| {
+                    dialogue_assets
+                        .get(&runner.dialogue_handle)
+                        .map(|dialogue| dialogue.graph.get_connected_nodes(node_id).len())
+                })
+                .unwrap_or(0);
+
+            if choice_count == 0 {
+                continue;
+            }
+
             for i in 0..9 {
+                if i >= choice_count {
+                    break;
+                }
+
                 let key = match i {
                     0 => KeyCode::Digit1,
                     1 => KeyCode::Digit2,
@@ -190,7 +208,7 @@ fn keyboard_input(
 
                 if keyboard_input.just_pressed(key) {
                     // Only send the selection event - don't advance immediately
-                    select_events.send(SelectDialogueChoice {
+                    select_events.write(SelectDialogueChoice {
                         entity,
                         choice_index: i,
                     });

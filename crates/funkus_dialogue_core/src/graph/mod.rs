@@ -67,7 +67,6 @@
 /// graph.add_edge(NodeId(2), NodeId(3), Some("Nice to meet you!".to_string())).unwrap();
 /// graph.add_edge(NodeId(2), NodeId(4), Some("Goodbye.".to_string())).unwrap();
 /// ```
-
 mod dialogue_graph;
 pub mod node;
 mod nodes;

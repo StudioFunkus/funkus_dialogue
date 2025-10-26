@@ -133,14 +133,14 @@ impl Plugin for DialoguePlugin {
             >::new(&["dialogue.json"]));
 
         // Register events
-        app.add_event::<events::DialogueStarted>()
-            .add_event::<events::DialogueEnded>()
-            .add_event::<events::DialogueNodeActivated>()
-            .add_event::<events::DialogueChoiceMade>()
-            .add_event::<events::AdvanceDialogue>()
-            .add_event::<events::SelectDialogueChoice>()
-            .add_event::<events::StartDialogue>()
-            .add_event::<events::StopDialogue>();
+        app.add_message::<events::DialogueStarted>()
+            .add_message::<events::DialogueEnded>()
+            .add_message::<events::DialogueNodeActivated>()
+            .add_message::<events::DialogueChoiceMade>()
+            .add_message::<events::AdvanceDialogue>()
+            .add_message::<events::SelectDialogueChoice>()
+            .add_message::<events::StartDialogue>()
+            .add_message::<events::StopDialogue>();
 
         // Set up dialogue systems
         runtime::setup_dialogue_systems(app);

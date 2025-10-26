@@ -1,45 +1,45 @@
 //! # Node type implementations.
-//! 
+//!
 //! This module contains implementations of various dialogue node types.
-//! 
+//!
 //! ## Node Types
-//! 
+//!
 //! The dialogue system supports these node types:
-//! 
+//!
 //! - **Text Nodes**: Display narrative text with speaker information
 //! - **Choice Nodes**: Present options to the player
-//! 
+//!
 //! Additional node types planned for future versions:
-//! 
+//!
 //! - **Condition Nodes**: Branch dialogue based on game state
 //! - **Action Nodes**: Trigger events or modify variables
 //! - **Jump Nodes**: Move to other parts of the dialogue
 
 use bevy::prelude::*;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 use super::node::{DialogueElement, NodeId};
 
 /// Enum containing all supported node types.
-/// 
+///
 /// DialogueNode is the core representation of different node types in the dialogue system.
 /// It uses Rust's enum pattern to represent different node variants directly, with each
 /// variant containing all the necessary fields for that node type. Connections between
 /// nodes are managed at the graph level, not within the nodes themselves.
-/// 
+///
 /// # Variants
-/// 
+///
 /// * `Text` - Node that displays text from a speaker
 /// * `Choice` - Node that presents choices to the player
-/// 
+///
 /// # Example
-/// 
+///
 /// ```rust
 /// use funkus_dialogue::graph::{DialogueGraph, DialogueNode, NodeId};
-/// 
+///
 /// // Create a text node
 /// let text_node = DialogueNode::text(NodeId(1), "Hello, world!");
-/// 
+///
 /// // Create a choice node
 /// let choice_node = DialogueNode::choice(NodeId(2))
 ///     .with_prompt("Make a selection:").unwrap();
@@ -79,21 +79,21 @@ pub enum DialogueNode {
 
 impl DialogueNode {
     /// Creates a new text node with the given ID and text.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `id` - Unique identifier for this node
     /// * `text` - The dialogue text content to display
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A new Text node with the specified ID and text
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
+    ///
     /// let node = DialogueNode::text(NodeId(1), "Welcome to our village, traveler.");
     /// ```
     pub fn text(id: NodeId, text: impl Into<String>) -> Self {
@@ -104,22 +104,22 @@ impl DialogueNode {
             portrait: None,
         }
     }
-    
+
     /// Creates a new choice node with the given ID.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `id` - Unique identifier for this node
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A new Choice node with the specified ID
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
+    ///
     /// let node = DialogueNode::choice(NodeId(2));
     /// ```
     pub fn choice(id: NodeId) -> Self {
@@ -130,20 +130,20 @@ impl DialogueNode {
             portrait: None,
         }
     }
-    
+
     /// Sets the speaker for this node.
-    /// 
+    ///
     /// This method can be used with any node type to set the speaker.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `speaker` - The name of the character speaking
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
+    ///
     /// let mut node = DialogueNode::text(NodeId(1), "Hello world");
     /// node.set_speaker("Guide");
     /// ```
@@ -153,20 +153,20 @@ impl DialogueNode {
             DialogueNode::Choice { speaker: s, .. } => *s = Some(speaker.into()),
         }
     }
-    
+
     /// Sets the portrait for this node.
-    /// 
+    ///
     /// This method can be used with any node type to set the portrait.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `portrait` - Identifier for the portrait/avatar to display
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
+    ///
     /// let mut node = DialogueNode::text(NodeId(1), "Hello world");
     /// node.set_portrait("guide_happy");
     /// ```
@@ -176,22 +176,22 @@ impl DialogueNode {
             DialogueNode::Choice { portrait: p, .. } => *p = Some(portrait.into()),
         }
     }
-    
+
     /// Sets the text content for a Text node.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `text` - The text content to set
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// Ok(()) if successful, or an error if this is not a Text node
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
+    ///
     /// let mut node = DialogueNode::text(NodeId(1), "Hello");
     /// node.set_text("Updated text").unwrap();
     /// ```
@@ -204,22 +204,22 @@ impl DialogueNode {
             _ => Err("Can only set text on a Text node"),
         }
     }
-    
+
     /// Sets the prompt for a Choice node.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `prompt` - The prompt text to set
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// Ok(()) if successful, or an error if this is not a Choice node
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
+    ///
     /// let mut node = DialogueNode::choice(NodeId(2));
     /// node.set_prompt("What would you like to do?").unwrap();
     /// ```
@@ -232,22 +232,22 @@ impl DialogueNode {
             _ => Err("Can only set prompt on a Choice node"),
         }
     }
-    
+
     /// Builder method to set the speaker.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `speaker` - The name of the speaker
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// The node with the speaker set
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
+    ///
     /// let node = DialogueNode::text(NodeId(1), "Hello")
     ///     .with_speaker("Guide");
     /// ```
@@ -255,22 +255,22 @@ impl DialogueNode {
         self.set_speaker(speaker);
         self
     }
-    
+
     /// Builder method to set the portrait.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `portrait` - Identifier for the portrait/avatar
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// The node with the portrait set
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
+    ///
     /// let node = DialogueNode::text(NodeId(1), "Hello")
     ///     .with_portrait("guide_happy");
     /// ```
@@ -278,23 +278,23 @@ impl DialogueNode {
         self.set_portrait(portrait);
         self
     }
-    
+
     /// Builder method to set the prompt for a Choice node.
-    /// 
+    ///
     /// # Parameters
-    /// 
+    ///
     /// * `prompt` - The prompt text
-    /// 
+    ///
     /// # Returns
-    /// 
+    ///
     /// A Result containing the node with the prompt set if successful,
     /// or an error message if this is not a Choice node
-    /// 
+    ///
     /// # Example
-    /// 
+    ///
     /// ```rust
     /// use funkus_dialogue::graph::{DialogueNode, NodeId};
-    /// 
+    ///
     /// let node = DialogueNode::choice(NodeId(2))
     ///     .with_prompt("What would you like to do?").unwrap();
     /// ```
@@ -320,8 +320,10 @@ impl DialogueElement for DialogueNode {
                 } else {
                     text.clone()
                 }
-            },
-            DialogueNode::Choice { prompt, speaker, .. } => {
+            }
+            DialogueNode::Choice {
+                prompt, speaker, ..
+            } => {
                 if let Some(prompt_text) = prompt {
                     if let Some(speaker_name) = speaker {
                         format!("{}: {} [Choice]", speaker_name, prompt_text)
@@ -331,7 +333,7 @@ impl DialogueElement for DialogueNode {
                 } else {
                     "Choice".to_string()
                 }
-            },
+            }
         }
     }
 }

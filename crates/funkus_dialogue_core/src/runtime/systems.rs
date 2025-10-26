@@ -57,7 +57,7 @@ pub fn update_dialogue_runners(
         if runner.state == DialogueState::ShowingText && runner.auto_advance {
             runner.auto_advance_timer.tick(time.delta());
 
-            if runner.auto_advance_timer.finished() {
+            if runner.auto_advance_timer.is_finished() {
                 if let Err(err) = runner.advance(dialogue) {
                     error!("Error advancing dialogue: {}", err);
                     runner.state = DialogueState::Error(err.to_string());
@@ -115,14 +115,14 @@ pub struct DialogueSystemSet;
 pub fn handle_dialogue_events(
     mut commands: Commands,
     dialogue_assets: Res<Assets<DialogueAsset>>,
-    mut start_events: EventReader<crate::events::StartDialogue>,
-    mut stop_events: EventReader<crate::events::StopDialogue>,
-    mut advance_events: EventReader<crate::events::AdvanceDialogue>,
-    mut select_events: EventReader<crate::events::SelectDialogueChoice>,
-    mut node_activated_events: EventWriter<crate::events::DialogueNodeActivated>,
-    mut dialogue_started_events: EventWriter<crate::events::DialogueStarted>,
-    mut dialogue_ended_events: EventWriter<crate::events::DialogueEnded>,
-    mut dialogue_choice_events: EventWriter<crate::events::DialogueChoiceMade>,
+    mut start_events: MessageReader<crate::events::StartDialogue>,
+    mut stop_events: MessageReader<crate::events::StopDialogue>,
+    mut advance_events: MessageReader<crate::events::AdvanceDialogue>,
+    mut select_events: MessageReader<crate::events::SelectDialogueChoice>,
+    mut node_activated_events: MessageWriter<crate::events::DialogueNodeActivated>,
+    mut dialogue_started_events: MessageWriter<crate::events::DialogueStarted>,
+    mut dialogue_ended_events: MessageWriter<crate::events::DialogueEnded>,
+    mut dialogue_choice_events: MessageWriter<crate::events::DialogueChoiceMade>,
     mut runner_query: Query<&mut DialogueRunner>,
 ) {
     // Handle start dialogue events
@@ -138,13 +138,13 @@ pub fn handle_dialogue_events(
 
                 // Send node activated event for the start node
                 if let Some(node_id) = runner.current_node_id {
-                    node_activated_events.send(crate::events::DialogueNodeActivated {
+                    node_activated_events.write(crate::events::DialogueNodeActivated {
                         entity: ev.entity,
                         node_id,
                     });
 
                     // Send dialogue started event
-                    dialogue_started_events.send(crate::events::DialogueStarted {
+                    dialogue_started_events.write(crate::events::DialogueStarted {
                         entity: ev.entity,
                         start_node_id: node_id,
                     });
@@ -162,7 +162,7 @@ pub fn handle_dialogue_events(
     for ev in stop_events.read() {
         if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
             // Send dialogue ended event
-            dialogue_ended_events.send(crate::events::DialogueEnded {
+            dialogue_ended_events.write(crate::events::DialogueEnded {
                 entity: ev.entity,
                 normal_exit: false,
             });
@@ -184,14 +184,14 @@ pub fn handle_dialogue_events(
                     Ok(()) => {
                         if runner.state == DialogueState::Finished {
                             // Send dialogue ended event
-                            dialogue_ended_events.send(crate::events::DialogueEnded {
+                            dialogue_ended_events.write(crate::events::DialogueEnded {
                                 entity: ev.entity,
                                 normal_exit: true,
                             });
                         } else if runner.current_node_id != old_node_id {
                             // Send node activated event
                             if let Some(node_id) = runner.current_node_id {
-                                node_activated_events.send(crate::events::DialogueNodeActivated {
+                                node_activated_events.write(crate::events::DialogueNodeActivated {
                                     entity: ev.entity,
                                     node_id,
                                 });
@@ -214,18 +214,36 @@ pub fn handle_dialogue_events(
             if runner.state == DialogueState::WaitingForChoice
                 || matches!(runner.state, DialogueState::ChoiceSelected(_))
             {
+                // Ensure the dialogue asset is available so we can validate the selection
+                let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) else {
+                    continue;
+                };
+
                 // Get the current node id
                 let Some(node_id) = runner.current_node_id else {
                     continue;
                 };
 
+                // Validate the requested choice index against available connections
+                let connections = dialogue.graph.get_connected_nodes(node_id);
+                if connections.is_empty() || ev.choice_index >= connections.len() {
+                    warn!(
+                        "Ignoring invalid choice index {} for entity {:?} (available choices: {})",
+                        ev.choice_index,
+                        ev.entity,
+                        connections.len()
+                    );
+                    continue;
+                }
+
                 // Select the choice - this now also updates the state to ChoiceSelected
                 if let Err(err) = runner.select_choice(ev.choice_index) {
                     error!("Error selecting choice: {}", err);
+                    continue;
                 }
 
                 // Send choice made event
-                dialogue_choice_events.send(crate::events::DialogueChoiceMade {
+                dialogue_choice_events.write(crate::events::DialogueChoiceMade {
                     entity: ev.entity,
                     node_id,
                     choice_index: ev.choice_index,

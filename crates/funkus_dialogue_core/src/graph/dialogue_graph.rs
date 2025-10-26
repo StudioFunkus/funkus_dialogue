@@ -975,7 +975,9 @@ mod tests {
         assert!(node5.is_some());
 
         // Add a connection that uses node 5
-        graph.connect(NodeId(1), NodeId(5), ConnectionData::new(None)).unwrap();
+        graph
+            .connect(NodeId(1), NodeId(5), ConnectionData::new(None))
+            .unwrap();
 
         // Verify the connection works
         let connections = graph.get_connected_nodes(NodeId(1));
@@ -1003,7 +1005,9 @@ mod tests {
         assert!(graph.validate().is_err());
 
         // Connect nodes - should pass validation
-        graph.connect(NodeId(1), NodeId(2), ConnectionData::new(None)).unwrap();
+        graph
+            .connect(NodeId(1), NodeId(2), ConnectionData::new(None))
+            .unwrap();
         assert!(graph.validate().is_ok());
     }
 

@@ -89,7 +89,7 @@ use crate::graph::NodeId;
 ///     }
 /// }
 /// ```
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub struct DialogueStarted {
     /// Entity running the dialogue
     pub entity: Entity,
@@ -124,7 +124,7 @@ pub struct DialogueStarted {
 ///     }
 /// }
 /// ```
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub struct DialogueNodeActivated {
     /// Entity running the dialogue
     pub entity: Entity,
@@ -159,7 +159,7 @@ pub struct DialogueNodeActivated {
 ///     }
 /// }
 /// ```
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub struct DialogueChoiceMade {
     /// Entity running the dialogue
     pub entity: Entity,
@@ -197,7 +197,7 @@ pub struct DialogueChoiceMade {
 ///     }
 /// }
 /// ```
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub struct DialogueEnded {
     /// Entity running the dialogue
     pub entity: Entity,
@@ -235,7 +235,7 @@ pub struct DialogueEnded {
 ///     }
 /// }
 /// ```
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub struct AdvanceDialogue {
     /// Entity running the dialogue
     pub entity: Entity,
@@ -285,7 +285,7 @@ pub struct AdvanceDialogue {
 ///     }
 /// }
 /// ```
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub struct SelectDialogueChoice {
     /// Entity running the dialogue
     pub entity: Entity,
@@ -335,7 +335,7 @@ pub struct SelectDialogueChoice {
 ///     }
 /// }
 /// ```
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub struct StartDialogue {
     /// Entity to attach the dialogue runner to
     pub entity: Entity,
@@ -372,7 +372,7 @@ pub struct StartDialogue {
 ///     }
 /// }
 /// ```
-#[derive(Event, Debug, Clone)]
+#[derive(Message, Debug, Clone)]
 pub struct StopDialogue {
     /// Entity running the dialogue
     pub entity: Entity,
