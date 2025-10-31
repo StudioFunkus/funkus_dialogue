@@ -1,0 +1,18 @@
+[package]
+name = "funkus_dialogue_editor"
+version = "0.1.0"
+edition = "2024"
+description = "Extensible dialogue graph editor for Funkus Dialogue"
+license = "Apache-2.0"
+repository = "https://github.com/StudioFunkus/funkus_dialogue"
+homepage = "https://github.com/StudioFunkus/funkus_dialogue"
+
+[lib]
+name = "funkus_dialogue_editor"
+path = "src/lib.rs"
+
+[dependencies]
+bevy = "0.17"
+bevy_egui = "0.38"
+egui-snarl = "0.9"
+funkus_dialogue_core = { path = "../funkus_dialogue_core", version = "0.1.0" }
