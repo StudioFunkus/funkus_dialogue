@@ -7,4 +7,3 @@ fn main() {
         .add_plugins(DialogueEditorPlugin)
         .run();
 }
-
