@@ -3,12 +3,13 @@ resolver = "2"
 members = [
     "crates/funkus_dialogue_core",
     "crates/funkus_dialogue_ui",
+    "crates/funkus_dialogue_editor",
 ]
 
 [package]
 name = "funkus_dialogue"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 description = "A comprehensive dialogue system for the Bevy game engine"
 license = "Apache-2.0"
 repository = "https://github.com/StudioFunkus/funkus_dialogue"
