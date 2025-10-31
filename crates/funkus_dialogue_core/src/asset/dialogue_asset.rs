@@ -87,9 +87,9 @@ impl DialogueAsset {
     /// # Example
     ///
     /// ```rust
-    /// use funkus_dialogue::{DialogueAsset, DialogueGraph, NodeId};
+    /// use funkus_dialogue::{DialogueAsset, DialogueGraph};
     ///
-    /// let graph = DialogueGraph::new(NodeId(1)).with_name("My Dialogue");
+    /// let graph = DialogueGraph::new().with_name("My Dialogue");
     /// let asset = DialogueAsset::new(graph);
     /// // The name is copied from the graph to the asset
     /// assert_eq!(asset.name, Some("My Dialogue".to_string()));

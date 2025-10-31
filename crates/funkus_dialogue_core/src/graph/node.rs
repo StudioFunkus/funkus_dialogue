@@ -3,6 +3,7 @@
 //! This module defines the core types and traits for dialogue nodes.
 
 use bevy::prelude::*;
+use petgraph::stable_graph::NodeIndex as StableNodeIndex;
 use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a node in a dialogue graph.
@@ -17,11 +18,42 @@ use serde::{Deserialize, Serialize};
 /// ```rust
 /// use funkus_dialogue::graph::NodeId;
 ///
-/// let id = NodeId(1);
+/// let id = NodeId::from_raw(1);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect, Serialize, Deserialize)]
 #[serde(crate = "serde")]
-pub struct NodeId(pub u32);
+pub struct NodeId(u32);
+
+impl NodeId {
+    /// Internal helper to create a NodeId from a petgraph index.
+    pub(crate) fn from_index(index: StableNodeIndex) -> Self {
+        Self(index.index() as u32 + 1)
+    }
+
+    /// Internal helper to convert a NodeId into a petgraph index.
+    pub(crate) fn into_index(self) -> StableNodeIndex {
+        debug_assert!(self.0 > 0, "NodeId 0 is invalid");
+        StableNodeIndex::new((self.0 - 1) as usize)
+    }
+
+    /// Exposes the raw numeric value backing this identifier (1-based).
+    ///
+    /// This remains available for serialization and tooling, but typical
+    /// gameplay code should treat `NodeId` as an opaque handle that comes
+    /// from `DialogueGraph::add_node`.
+    pub fn raw(self) -> u32 {
+        self.0
+    }
+
+    /// Creates a NodeId from a raw numeric value (1-based).
+    ///
+    /// Prefer receiving `NodeId` values from the dialogue graph APIs rather
+    /// than constructing them manually. This constructor exists primarily
+    /// for asset pipelines and migration support.
+    pub fn from_raw(id: u32) -> Self {
+        Self(id)
+    }
+}
 
 /// Connection from one node to another.
 ///
@@ -37,10 +69,10 @@ pub struct NodeId(pub u32);
 /// # Example
 ///
 /// ```rust
-/// use funkus_dialogue::graph::{NodeId, Connection};
+/// use funkus_dialogue::graph::{Connection, NodeId};
 ///
 /// let connection = Connection {
-///     target_id: NodeId(2),
+///     target_id: NodeId::from_raw(2),
 ///     label: Some("Go to the castle".to_string()),
 /// };
 /// ```
@@ -79,28 +111,20 @@ impl ConnectionData {
 ///
 /// # Methods
 ///
-/// * `id()` - Returns the unique ID of this node
 /// * `display_name()` - Returns a human-readable name for debugging and UI purposes
 ///
 /// # Example Implementation
 ///
 /// ```rust
-/// use funkus_dialogue::graph::{DialogueNode, NodeId};
+/// use funkus_dialogue::graph::DialogueNode;
 ///
 /// enum MyDialogueNode {
 ///     Simple {
-///         id: NodeId,
 ///         text: String
 ///     }
 /// }
 ///
 /// impl DialogueElement for MyDialogueNode {
-///     fn id(&self) -> NodeId {
-///         match self {
-///             MyDialogueNode::Simple { id, .. } => *id
-///         }
-///     }
-///     
 ///     fn display_name(&self) -> String {
 ///         match self {
 ///             MyDialogueNode::Simple { text, .. } => text.clone()
@@ -109,9 +133,6 @@ impl ConnectionData {
 /// }
 /// ```
 pub trait DialogueElement: Send + Sync + 'static {
-    /// Returns the unique ID of this node.
-    fn id(&self) -> NodeId;
-
     /// Returns a display name for debugging and editor purposes.
     fn display_name(&self) -> String;
 }

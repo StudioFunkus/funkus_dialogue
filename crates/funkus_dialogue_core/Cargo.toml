@@ -22,7 +22,3 @@ bevy = "0.17"
 [features]
 default = []
 debug_ui = ["bevy_egui"]
-
-[[example]]
-name = "simple_dialogue"
-path = "examples/simple_dialogue.rs"

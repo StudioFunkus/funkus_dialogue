@@ -133,21 +133,25 @@ pub fn handle_dialogue_events(
 
             // Get the dialogue asset
             if let Some(dialogue) = dialogue_assets.get(&ev.dialogue_handle) {
-                // Start the dialogue
-                runner.start(dialogue);
+                match runner.start(dialogue) {
+                    Ok(()) => {
+                        if let Some(node_id) = runner.current_node_id {
+                            node_activated_events.write(crate::events::DialogueNodeActivated {
+                                entity: ev.entity,
+                                node_id,
+                            });
 
-                // Send node activated event for the start node
-                if let Some(node_id) = runner.current_node_id {
-                    node_activated_events.write(crate::events::DialogueNodeActivated {
-                        entity: ev.entity,
-                        node_id,
-                    });
-
-                    // Send dialogue started event
-                    dialogue_started_events.write(crate::events::DialogueStarted {
-                        entity: ev.entity,
-                        start_node_id: node_id,
-                    });
+                            dialogue_started_events.write(crate::events::DialogueStarted {
+                                entity: ev.entity,
+                                start_node_id: node_id,
+                            });
+                        }
+                    }
+                    Err(err) => {
+                        runner.state = DialogueState::Error(err.to_string());
+                        runner.current_node_id = None;
+                        error!("Failed to start dialogue for {:?}: {}", ev.entity, err);
+                    }
                 }
             }
         } else {

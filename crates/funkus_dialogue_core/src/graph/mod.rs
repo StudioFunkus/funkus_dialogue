@@ -43,29 +43,23 @@
 /// ## Example Usage
 ///
 /// ```rust
-/// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
+/// use funkus_dialogue::graph::{ConnectionData, DialogueGraph, DialogueNode};
 ///
-/// // Create a new dialogue graph
-/// let mut graph = DialogueGraph::new(NodeId(1))
-///     .with_name("Simple Dialogue");
-///     
-/// // Add a text node
-/// let text_node = DialogueNode::text(NodeId(1), "Hello there!")
-///     .with_speaker("Guide");
-///     
-/// // Add a choice node
-/// let choice_node = DialogueNode::choice(NodeId(2))
-///     .with_speaker("Guide")
-///     .with_prompt("How would you like to respond?").unwrap();
+/// let mut graph = DialogueGraph::new().with_name("Simple Dialogue");
 ///
-/// // Add nodes to the graph
-/// graph.add_node(text_node);
-/// graph.add_node(choice_node);
+/// let start = graph
+///     .add_node(DialogueNode::text("Hello there!").with_speaker("Guide"));
+/// let choice = graph
+///     .add_node(
+///         DialogueNode::choice()
+///             .with_speaker("Guide")
+///             .with_prompt("How would you like to respond?").unwrap()
+///     );
 ///
-/// // Connect nodes using the graph
-/// graph.add_edge(NodeId(1), NodeId(2), None).unwrap();
-/// graph.add_edge(NodeId(2), NodeId(3), Some("Nice to meet you!".to_string())).unwrap();
-/// graph.add_edge(NodeId(2), NodeId(4), Some("Goodbye.".to_string())).unwrap();
+/// graph
+///     .connect(start, choice, ConnectionData::new(None))
+///     .unwrap();
+/// graph.set_start_node(start).unwrap();
 /// ```
 mod dialogue_graph;
 pub mod node;

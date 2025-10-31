@@ -209,6 +209,12 @@ impl DialogueRunner {
     ///
     /// * `dialogue` - The dialogue asset to start
     ///
+    /// # Returns
+    ///
+    /// [`DialogueResult<()>`](crate::error::DialogueResult) indicating whether startup
+    /// succeeded. Errors report missing start nodes or start nodes that no longer exist
+    /// in the graph.
+    ///
     /// # Example
     ///
     /// ```rust
@@ -221,27 +227,35 @@ impl DialogueRunner {
     /// ) {
     ///     for mut runner in dialogue_query.iter_mut() {
     ///         if let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) {
-    ///             runner.start(dialogue);
+    ///             if let Err(err) = runner.start(dialogue) {
+    ///                 eprintln!("Failed to start dialogue: {}", err);
+    ///             }
     ///         }
     ///     }
     /// }
     /// ```
-    pub fn start(&mut self, dialogue: &DialogueAsset) {
-        let start_id = dialogue.graph.start_node;
+    pub fn start(&mut self, dialogue: &DialogueAsset) -> DialogueResult<()> {
+        self.current_node_id = None;
+        self.state = DialogueState::Inactive;
+
+        let start_id = dialogue
+            .graph
+            .start_node
+            .ok_or_else(|| DialogueError::GraphError("Dialogue has no start node".to_string()))?;
+
+        let start_node = dialogue
+            .graph
+            .get_node(start_id)
+            .ok_or(DialogueError::NodeNotFound(start_id))?;
+
         self.current_node_id = Some(start_id);
+        self.state = match start_node {
+            DialogueNode::Text { .. } => DialogueState::ShowingText,
+            DialogueNode::Choice { .. } => DialogueState::WaitingForChoice,
+        };
 
-        // Set initial state based on the start node type
-        if let Some(node) = dialogue.graph.get_node(start_id) {
-            match node {
-                DialogueNode::Text { .. } => self.state = DialogueState::ShowingText,
-                DialogueNode::Choice { .. } => self.state = DialogueState::WaitingForChoice,
-            }
-        } else {
-            self.state = DialogueState::Error(format!("Start node {:?} not found", start_id));
-        }
-
-        // Reset timer for auto-advance
         self.auto_advance_timer.reset();
+        Ok(())
     }
 
     /// Advances to the next node in the dialogue.
@@ -343,10 +357,17 @@ impl DialogueRunner {
                 // Get connections from the graph
                 let connections = dialogue.graph.get_connected_nodes(current_id);
 
+                if connections.is_empty() {
+                    return Err(DialogueError::GraphError(format!(
+                        "Choice node {:?} has no outgoing connections",
+                        current_id
+                    )));
+                }
+
                 if choice_index >= connections.len() {
                     return Err(DialogueError::InvalidChoiceIndex(
                         choice_index,
-                        connections.len() - 1,
+                        connections.len().saturating_sub(1),
                     ));
                 }
 

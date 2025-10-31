@@ -1,100 +1,70 @@
 //! # Core dialogue graph structure.
 //!
-//! This module defines the `DialogueGraph` struct, which represents a complete dialogue
-//! with its nodes, connections, and metadata.
+//! `DialogueGraph` manages dialogue nodes and their connections while handing out stable
+//! [`NodeId`] handles for callers to use. Each call to [`DialogueGraph::add_node`] returns
+//! the identifier needed to connect nodes, serialize assets, or drive the runtime, and
+//! those identifiers remain valid even after other nodes are removed.
+//!
+//! ```rust
+//! use funkus_dialogue::graph::{ConnectionData, DialogueGraph, DialogueNode};
+//!
+//! let mut graph = DialogueGraph::new().with_name("Greeting");
+//! let start = graph.add_node(DialogueNode::text("Hello!").with_speaker("Guide"));
+//! let choice = graph
+//!     .add_node(DialogueNode::choice().with_prompt("How do you respond?").unwrap());
+//! graph.connect(start, choice, ConnectionData::new(None)).unwrap();
+//! graph.set_start_node(start).unwrap();
+//! ```
 
 use bevy::prelude::*;
-use petgraph::graph::{DiGraph, NodeIndex};
+use petgraph::algo;
+use petgraph::stable_graph::{NodeIndex as StableNodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNodeReferences};
+use petgraph::Direction;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 use super::node::NodeId;
 use super::nodes::DialogueNode;
-use super::{ConnectionData, DialogueElement};
+use super::ConnectionData;
 
-/// Represents a complete dialogue graph with nodes and metadata.
+/// Represents a complete dialogue graph with nodes, connections, and metadata.
 ///
-/// `DialogueGraph` is the core data structure that contains all elements of a dialogue:
+/// `DialogueGraph` wraps petgraph's [`StableDiGraph`], issuing stable [`NodeId`]
+/// handles whenever [`DialogueGraph::add_node`] is called. Those handles are used
+/// throughout the API for connecting nodes, marking the start node, and driving the
+/// runtime layer.
 ///
-/// - Nodes of various types (text, choice, etc.)
-/// - Connections between nodes that define the flow
-/// - Metadata such as the name and starting point
+/// # Fields
 ///
-/// Internally, the graph uses `petgraph` for efficient graph operations while
-/// maintaining a more dialogue-specific API for client code.
-///
-/// # Structure
-///
-/// - `graph`: The underlying petgraph directed graph
-/// - `node_indices`: Mapping from NodeId to petgraph NodeIndex
-/// - `start_node`: The starting node ID for this dialogue
-/// - `name`: Optional name or identifier for this dialogue
-///
-/// # Example
-///
-/// ```rust
-/// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
-///
-/// // Create a new dialogue graph
-/// let mut graph = DialogueGraph::new(NodeId(1))
-///     .with_name("Simple Dialogue");
-///
-/// // Add nodes to the graph
-/// graph.add_node(DialogueNode::text(NodeId(1), "Hello adventurer!")
-///     .with_speaker("Guide"));
-///
-/// graph.add_node(DialogueNode::choice(NodeId(2))
-///     .with_prompt("How do you respond?").unwrap());
-///
-/// graph.add_node(DialogueNode::text(NodeId(3), "Nice to meet you too!"));
-/// graph.add_node(DialogueNode::text(NodeId(4), "..."));
-///
-/// // Connect nodes at the graph level
-/// graph.add_edge(NodeId(1), NodeId(2), None).unwrap();
-/// graph.add_edge(NodeId(2), NodeId(3), Some("Greet back".to_string())).unwrap();
-/// graph.add_edge(NodeId(2), NodeId(4), Some("Ignore".to_string())).unwrap();
-/// ```
-#[derive(Debug, Clone, Reflect)]
+/// - `graph`: internal storage for [`DialogueNode`] values and [`ConnectionData`] edges
+/// - `start_node`: optional entry point for the dialogue
+/// - `name`: optional label for tooling or display purposes
+#[derive(Debug, Clone, Default, Reflect)]
 pub struct DialogueGraph {
-    /// The underlying directed graph - primary data store for nodes and connections
+    /// The underlying stable directed graph storing nodes and edges.
     #[reflect(ignore)]
-    graph: DiGraph<DialogueNode, ConnectionData>,
-    /// Mapping between our stable NodeIds and petgraph's internal NodeIndices.
-    /// This map is essential because:
-    /// 1. Petgraph's indices may change during operations like node removal
-    /// 2. It lets us use consistent, stable identifiers in the public API and serialized data
-    /// 3. It provides O(1) lookups when translating between our IDs and petgraph's indices
-    #[reflect(ignore)]
-    node_indices: HashMap<NodeId, NodeIndex>,
-    /// The starting node ID for this dialogue
-    pub start_node: NodeId,
-    /// Optional name or identifier for this dialogue
+    graph: StableDiGraph<DialogueNode, ConnectionData>,
+    /// Optional starting node for this dialogue graph.
+    pub start_node: Option<NodeId>,
+    /// Optional display name for the dialogue.
     pub name: Option<String>,
 }
 
-/// The serialization and deserialization process translates between the internal
-/// graph representation and a more human-readable JSON format. This allows dialogues
-/// to be defined in external tools and loaded into the game. The format focuses on
-/// clarity by separating nodes and connections into distinct sections.
 impl Serialize for DialogueGraph {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        // Define our new serialization format
         #[derive(Serialize)]
         struct SerialNode {
             #[serde(rename = "type")]
             node_type: &'static str,
             id: NodeId,
-            // Text node fields
             #[serde(skip_serializing_if = "Option::is_none")]
             text: Option<String>,
-            // Choice node fields
             #[serde(skip_serializing_if = "Option::is_none")]
             prompt: Option<String>,
-            // Common fields
             #[serde(skip_serializing_if = "Option::is_none")]
             speaker: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
@@ -112,24 +82,20 @@ impl Serialize for DialogueGraph {
         struct SerialGraph {
             nodes: Vec<SerialNode>,
             connections: Vec<SerialConnection>,
-            start_node: NodeId,
+            start_node: Option<NodeId>,
             name: Option<String>,
         }
 
-        // Collect all nodes
         let mut nodes = Vec::new();
         let mut connections = Vec::new();
 
-        // Process each node
-        for node_id in self.node_ids() {
-            if let Some(node) = self.get_node(node_id) {
-                // Extract node data based on type
+        for index in self.graph.node_indices() {
+            if let Some(node) = self.graph.node_weight(index) {
+                let node_id = NodeId::from_index(index);
                 let (node_type, text, prompt) = match node {
                     DialogueNode::Text { text, .. } => ("Text", Some(text.clone()), None),
                     DialogueNode::Choice { prompt, .. } => ("Choice", None, prompt.clone()),
                 };
-
-                // Get speaker and portrait from either node type
                 let (speaker, portrait) = match node {
                     DialogueNode::Text {
                         speaker, portrait, ..
@@ -139,7 +105,6 @@ impl Serialize for DialogueGraph {
                     } => (speaker.clone(), portrait.clone()),
                 };
 
-                // Add node to the collection
                 nodes.push(SerialNode {
                     node_type,
                     id: node_id,
@@ -148,27 +113,36 @@ impl Serialize for DialogueGraph {
                     speaker,
                     portrait,
                 });
-
-                // Process all connections from this node
-                for (target_id, conn_data) in self.get_connections(node_id) {
-                    connections.push(SerialConnection {
-                        from: node_id,
-                        to: target_id,
-                        label: conn_data.label.clone(),
-                    });
-                }
             }
         }
 
-        // Create the serializable structure
-        let graph_data = SerialGraph {
+        for edge in self.graph.edge_indices() {
+            if let Some((from_idx, to_idx)) = self.graph.edge_endpoints(edge) {
+                let from = NodeId::from_index(from_idx);
+                let to = NodeId::from_index(to_idx);
+                let label = self
+                    .graph
+                    .edge_weight(edge)
+                    .and_then(|data| data.label.clone());
+                connections.push(SerialConnection { from, to, label });
+            }
+        }
+
+        nodes.sort_by_key(|node| node.id.raw());
+        connections.sort_by(|a, b| {
+            a.from
+                .raw()
+                .cmp(&b.from.raw())
+                .then(a.to.raw().cmp(&b.to.raw()))
+        });
+
+        SerialGraph {
             nodes,
             connections,
             start_node: self.start_node,
             name: self.name.clone(),
-        };
-
-        graph_data.serialize(serializer)
+        }
+        .serialize(serializer)
     }
 }
 
@@ -177,7 +151,6 @@ impl<'de> Deserialize<'de> for DialogueGraph {
     where
         D: serde::Deserializer<'de>,
     {
-        // Define matching deserialization structure
         #[derive(Deserialize)]
         struct SerialNode {
             #[serde(rename = "type")]
@@ -200,59 +173,53 @@ impl<'de> Deserialize<'de> for DialogueGraph {
         struct SerialGraph {
             nodes: Vec<SerialNode>,
             connections: Vec<SerialConnection>,
-            start_node: NodeId,
+            start_node: Option<NodeId>,
             name: Option<String>,
         }
 
-        // Deserialize the data
         let data = SerialGraph::deserialize(deserializer)?;
 
-        // Create a new graph
-        let mut graph = DialogueGraph::new(data.start_node);
+        let mut graph = DialogueGraph::new();
         graph.name = data.name;
 
-        // Add all nodes first
-        for node_data in &data.nodes {
-            // Create the appropriate node type
-            let node = match node_data.node_type.as_str() {
-                "Text" => {
-                    let mut node = DialogueNode::text(
-                        node_data.id,
-                        node_data.text.clone().unwrap_or_default(),
-                    );
-                    if let DialogueNode::Text {
-                        speaker, portrait, ..
-                    } = &mut node
-                    {
-                        *speaker = node_data.speaker.clone();
-                        *portrait = node_data.portrait.clone();
-                    }
-                    node
-                }
+        let mut id_map: HashMap<NodeId, NodeId> = HashMap::new();
+
+        for node_data in data.nodes {
+            let mut node = match node_data.node_type.as_str() {
+                "Text" => DialogueNode::text(node_data.text.unwrap_or_default()),
                 "Choice" => {
-                    let mut node = DialogueNode::choice(node_data.id);
-                    if let DialogueNode::Choice {
-                        prompt,
-                        speaker,
-                        portrait,
-                        ..
-                    } = &mut node
-                    {
-                        *prompt = node_data.prompt.clone();
-                        *speaker = node_data.speaker.clone();
-                        *portrait = node_data.portrait.clone();
+                    let mut choice = DialogueNode::choice();
+                    if let Some(prompt) = node_data.prompt {
+                        let _ = choice.set_prompt(prompt);
                     }
-                    node
+                    choice
                 }
-                _ => continue, // Skip unknown node types
+                // Ignore unknown variants so assets remain forward-compatible
+                _ => continue,
             };
 
-            graph.add_node(node);
+            if let Some(speaker) = node_data.speaker {
+                node.set_speaker(speaker);
+            }
+
+            if let Some(portrait) = node_data.portrait {
+                node.set_portrait(portrait);
+            }
+
+            let assigned_id = graph.add_node(node);
+            id_map.insert(node_data.id, assigned_id);
         }
 
-        // Add all connections
-        for conn in &data.connections {
-            let _ = graph.connect(conn.from, conn.to, ConnectionData::new(conn.label.clone()));
+        if let Some(start_serial) = data.start_node {
+            if let Some(mapped) = id_map.get(&start_serial) {
+                graph.start_node = Some(*mapped);
+            }
+        }
+
+        for conn in data.connections {
+            if let (Some(&from), Some(&to)) = (id_map.get(&conn.from), id_map.get(&conn.to)) {
+                let _ = graph.connect(from, to, ConnectionData::new(conn.label.clone()));
+            }
         }
 
         Ok(graph)
@@ -260,417 +227,111 @@ impl<'de> Deserialize<'de> for DialogueGraph {
 }
 
 impl DialogueGraph {
-    /// Creates a new empty dialogue graph with the specified start node ID.
+    /// Creates a new, empty dialogue graph with no nodes or start point.
     ///
-    /// # Parameters
-    ///
-    /// * `start_node` - The ID of the node that will be the starting point for this dialogue
-    ///
-    /// # Returns
-    ///
-    /// A new, empty DialogueGraph with the specified start node
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId};
-    ///
-    /// let graph = DialogueGraph::new(NodeId(1));
-    /// assert_eq!(graph.start_node, NodeId(1));
-    /// ```
-    pub fn new(start_node: NodeId) -> Self {
-        Self {
-            graph: DiGraph::new(),
-            node_indices: HashMap::new(),
-            start_node,
-            name: None,
-        }
+    /// Typically you call [`DialogueGraph::add_node`] immediately afterward to seed the graph.
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Sets the name of this dialogue graph.
+    /// Assigns a display name to the dialogue graph using builder syntax.
     ///
-    /// # Parameters
-    ///
-    /// * `name` - The name to assign to this dialogue graph
-    ///
-    /// # Returns
-    ///
-    /// The dialogue graph with the name set
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId};
-    ///
-    /// let graph = DialogueGraph::new(NodeId(1))
-    ///     .with_name("Tutorial Dialogue");
-    ///     
-    /// assert_eq!(graph.name, Some("Tutorial Dialogue".to_string()));
-    /// ```
+    /// This is a convenience helper for chaining with other builder-style methods when
+    /// constructing graphs inline in tests or examples.
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
-    /// Adds a node to the graph.
+    fn node_index(&self, id: NodeId) -> Option<StableNodeIndex> {
+        let idx = id.into_index();
+        if self.graph.contains_node(idx) {
+            Some(idx)
+        } else {
+            None
+        }
+    }
+
+    fn require_index(&self, id: NodeId) -> Result<StableNodeIndex, String> {
+        self.node_index(id)
+            .ok_or_else(|| format!("Node {:?} not found", id))
+    }
+
+    /// Adds a node to the graph and returns its stable identifier.
     ///
-    /// This method adds a node to the petgraph structure and updates the node_indices map
-    /// to maintain the mapping between NodeId and petgraph's internal NodeIndex.
-    ///
-    /// # Parameters
-    ///
-    /// * `node` - The node to add to the graph
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
-    ///
-    /// let mut graph = DialogueGraph::new(NodeId(1));
-    /// let text_node = DialogueNode::text(NodeId(1), "Hello, world!");
-    ///
-    /// graph.add_node(text_node);
-    /// ```
-    pub fn add_node(&mut self, node: DialogueNode) {
-        let id = node.id();
+    /// The returned [`NodeId`] should be retained by the caller and used when wiring
+    /// connections or updating the node later.
+    pub fn add_node(&mut self, node: DialogueNode) -> NodeId {
         let index = self.graph.add_node(node);
-        self.node_indices.insert(id, index);
+        NodeId::from_index(index)
     }
 
-    /// Adds a node to the graph using builder pattern.
+    /// Retrieves a node by its identifier.
     ///
-    /// # Parameters
-    ///
-    /// * `node` - The node to add to the graph
-    ///
-    /// # Returns
-    ///
-    /// The dialogue graph with the node added
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
-    ///
-    /// let text_node = DialogueNode::text(NodeId(1), "Hello, world!");
-    ///
-    /// let graph = DialogueGraph::new(NodeId(1))
-    ///     .with_node(text_node);
-    /// ```
-    pub fn with_node(mut self, node: DialogueNode) -> Self {
-        self.add_node(node);
-        self
-    }
-
-    /// Gets a node by its ID.
-    ///
-    /// This method translates the NodeId to petgraph's internal NodeIndex
-    /// and then retrieves the node from the graph.
-    ///
-    /// # Parameters
-    ///
-    /// * `id` - The ID of the node to retrieve
-    ///
-    /// # Returns
-    ///
-    /// An optional reference to the node if it exists, or None if not found
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
-    ///
-    /// let mut graph = DialogueGraph::new(NodeId(1));
-    /// graph.add_node(DialogueNode::text(NodeId(1), "Hello"));
-    ///
-    /// let node = graph.get_node(NodeId(1));
-    /// assert!(node.is_some());
-    ///
-    /// let missing_node = graph.get_node(NodeId(99));
-    /// assert!(missing_node.is_none());
-    /// ```
+    /// Returns `None` if the handle is stale or the node has been removed.
+    /// This is typically used when presenting dialogue content at runtime.
     pub fn get_node(&self, id: NodeId) -> Option<&DialogueNode> {
-        // Get the NodeIndex for this NodeId and then look up the node in the graph
-        self.node_indices
-            .get(&id)
-            .and_then(|&idx| self.graph.node_weight(idx))
+        self.node_index(id)
+            .and_then(|index| self.graph.node_weight(index))
     }
 
-    /// Gets a mutable reference to a node by its ID.
+    /// Retrieves a mutable reference to a node by its identifier.
     ///
-    /// Similar to get_node, but returns a mutable reference, allowing the node to be modified.
-    ///
-    /// # Parameters
-    ///
-    /// * `id` - The ID of the node to retrieve
-    ///
-    /// # Returns
-    ///
-    /// An optional mutable reference to the node if it exists, or None if not found
+    /// When the identifier no longer refers to an active node the method returns `None`.
+    /// Useful for tooling that edits an existing node in-place.
     pub fn get_node_mut(&mut self, id: NodeId) -> Option<&mut DialogueNode> {
-        self.node_indices
-            .get(&id)
-            .and_then(|&idx| self.graph.node_weight_mut(idx))
+        let idx = self.node_index(id)?;
+        self.graph.node_weight_mut(idx)
     }
 
-    /// Gets the starting node of the dialogue.
+    /// Marks the node as the starting point for this dialogue.
     ///
-    /// # Returns
+    /// An error is returned if `id` does not refer to an active node.
+    pub fn set_start_node(&mut self, id: NodeId) -> Result<(), String> {
+        self.require_index(id)?;
+        self.start_node = Some(id);
+        Ok(())
+    }
+
+    /// Clears the currently assigned start node, if any.
+    pub fn clear_start_node(&mut self) {
+        self.start_node = None;
+    }
+
+    /// Returns the starting node, if it exists.
     ///
-    /// An optional reference to the start node if it exists, or None if the start node ID is invalid
-    ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, DialogueNode};
-    ///
-    /// let mut graph = DialogueGraph::new(NodeId(1));
-    /// graph.add_node(DialogueNode::text(NodeId(1), "Start node"));
-    ///
-    /// let start_node = graph.get_start_node();
-    /// assert!(start_node.is_some());
-    /// ```
+    /// This is primarily helpful for editor tooling that wants to preview the
+    /// current entry point without walking the graph.
     pub fn get_start_node(&self) -> Option<&DialogueNode> {
-        self.get_node(self.start_node)
+        self.start_node.and_then(|id| self.get_node(id))
     }
 
     /// Validates the graph structure.
     ///
-    /// This performs several checks to ensure the graph is valid:
-    /// - All edge connections reference valid nodes
-    /// - The start node exists
-    /// - All nodes are reachable from the start node
-    ///
-    /// # Returns
-    ///
-    /// Ok(()) if the graph is valid, or an error message describing the issue
+    /// Ensures that the start node exists and that every node is reachable from it.
     pub fn validate(&self) -> Result<(), String> {
-        // Check that all edges point to valid target nodes
+        let start_id = self
+            .start_node
+            .ok_or_else(|| "Start node is not set".to_string())?;
+        let start_index = self.require_index(start_id)?;
+
+        // Ensure all edges reference existing nodes.
         for edge in self.graph.edge_indices() {
-            if let Some((source_idx, target_idx)) = self.graph.edge_endpoints(edge) {
-                // Find the NodeId for the source
-                let source_id = self
-                    .node_indices
-                    .iter()
-                    .find_map(|(id, &idx)| if idx == source_idx { Some(id) } else { None })
-                    .ok_or_else(|| {
-                        format!(
-                            "Internal error: Edge source index {:?} has no NodeId mapping",
-                            source_idx
-                        )
-                    })?;
-
-                // Check if the target node exists by attempting to get its weight
-                if self.graph.node_weight(target_idx).is_none() {
-                    return Err(format!(
-                        "Node {:?} has an edge to non-existent target index {:?}",
-                        source_id, target_idx
-                    ));
+            if let Some((_, to_idx)) = self.graph.edge_endpoints(edge) {
+                if !self.graph.contains_node(to_idx) {
+                    return Err("Graph contains a connection to a removed node".to_string());
                 }
             }
         }
 
-        // Check that the start node exists
-        if !self.node_indices.contains_key(&self.start_node) {
-            return Err(format!("Start node {:?} does not exist", self.start_node));
-        }
-
-        // Check for unreachable nodes using petgraph's algorithms
-        if let Some(&start_index) = self.node_indices.get(&self.start_node) {
-            // Using Petgraph's reachability analysis
-            for (node_id, &node_idx) in &self.node_indices {
-                if *node_id != self.start_node {
-                    let reachable = petgraph::algo::has_path_connecting(
-                        &self.graph,
-                        start_index,
-                        node_idx,
-                        None,
-                    );
-                    if !reachable {
-                        return Err(format!("Node {:?} is unreachable from start node", node_id));
-                    }
-                }
+        for (idx, _) in self.graph.node_references() {
+            if idx == start_index {
+                continue;
             }
-        }
-
-        Ok(())
-    }
-
-    /// Get all nodes connected to the given node.
-    ///
-    /// This method returns a list of NodeIds and optional connection labels for all
-    /// nodes that are direct targets of outgoing edges from the specified node.
-    ///
-    /// # Parameters
-    ///
-    /// * `id` - The ID of the node to find connections from
-    ///
-    /// # Returns
-    ///
-    /// A vector of (NodeId, Option<String>) pairs representing connected nodes and their connection labels
-    pub fn get_connected_nodes(&self, id: NodeId) -> Vec<(NodeId, Option<String>)> {
-        // Convert from ConnectionData to simple Option<String>
-        self.get_connections(id)
-            .into_iter()
-            .map(|(target_id, data)| (target_id, data.label.clone()))
-            .collect()
-    }
-
-    /// Returns the number of nodes in the graph.
-    pub fn node_count(&self) -> usize {
-        self.graph.node_count()
-    }
-
-    /// Returns all node IDs in the graph.
-    pub fn node_ids(&self) -> Vec<NodeId> {
-        self.node_indices.keys().cloned().collect()
-    }
-
-    /// Returns an iterator over all nodes in the graph.
-    pub fn nodes_iter(&self) -> impl Iterator<Item = &DialogueNode> {
-        self.graph.node_weights()
-    }
-
-    /// Checks if a node with the specified ID exists in the graph.
-    pub fn contains_node(&self, id: NodeId) -> bool {
-        self.node_indices.contains_key(&id)
-    }
-
-    /// Updates a node in the graph.
-    ///
-    /// This method allows modifying a node that's already in the graph.
-    ///
-    /// # Parameters
-    ///
-    /// * `id` - The ID of the node to update
-    /// * `node` - The new node data
-    ///
-    /// # Returns
-    ///
-    /// Ok(()) if the update was successful, or an error if the node doesn't exist
-    pub fn update_node(&mut self, id: NodeId, node: DialogueNode) -> Result<(), String> {
-        if let Some(&idx) = self.node_indices.get(&id) {
-            if let Some(existing_node) = self.graph.node_weight_mut(idx) {
-                *existing_node = node;
-                Ok(())
-            } else {
-                Err(format!("Node {:?} found in indices but not in graph", id))
-            }
-        } else {
-            Err(format!("Node {:?} not found", id))
-        }
-    }
-
-    /// Removes a node from the graph.
-    ///
-    /// This method removes a node and all its incoming and outgoing connections.
-    /// It properly maintains the NodeId-to-NodeIndex mapping by accounting for
-    /// petgraph's node removal behavior, which may reindex other nodes.
-    ///
-    /// # Parameters
-    ///
-    /// * `id` - The ID of the node to remove
-    ///
-    /// # Returns
-    ///
-    /// Ok(()) if the removal was successful, or an error if the node doesn't exist
-    pub fn remove_node(&mut self, id: NodeId) -> Result<(), String> {
-        if let Some(&idx) = self.node_indices.get(&id) {
-            // Before removing the node, check if it's the last node
-            let is_last_node = idx.index() == self.graph.node_count() - 1;
-
-            // If it's not the last node, find which node will be moved to its position
-            let last_node_id = if !is_last_node {
-                // Find the ID of the last node that will be moved
-                let last_idx = NodeIndex::new(self.graph.node_count() - 1);
-                let last_id = self
-                    .node_indices
-                    .iter()
-                    .find_map(|(&nid, &nidx)| if nidx == last_idx { Some(nid) } else { None })
-                    .ok_or_else(|| "Failed to find last node ID".to_string())?;
-                Some(last_id)
-            } else {
-                None
-            };
-
-            // Remove the node from petgraph
-            self.graph.remove_node(idx);
-
-            // Remove the mapping for the deleted node
-            self.node_indices.remove(&id);
-
-            // Update the mapping for the last node that was moved
-            if let Some(last_id) = last_node_id {
-                // The last node now has the index of the removed node
-                self.node_indices.insert(last_id, idx);
-            }
-
-            Ok(())
-        } else {
-            Err(format!("Node {:?} not found", id))
-        }
-    }
-
-    /// Rebuilds the NodeId-to-NodeIndex mapping.
-    ///
-    /// This is useful after operations that might have invalidated the mapping
-    /// or if you suspect the mapping might be inconsistent with the graph.
-    pub fn rebuild_mapping(&mut self) {
-        // Clear existing mapping
-        self.node_indices.clear();
-
-        // Rebuild from current graph state
-        for (idx, node) in self.graph.node_references() {
-            self.node_indices.insert(node.id(), idx);
-        }
-    }
-
-    /// Validates that the NodeId-to-NodeIndex mapping is consistent with the graph.
-    ///
-    /// This method is available in debug builds to check for mapping inconsistencies.
-    ///
-    /// # Returns
-    ///
-    /// Ok(()) if the mapping is valid, or an error message if inconsistencies are found
-    #[cfg(debug_assertions)]
-    pub fn validate_mapping(&self) -> Result<(), String> {
-        // Check that all nodes in the graph have an entry in the mapping
-
-        use petgraph::visit::IntoNodeReferences;
-        for (idx, node) in self.graph.node_references() {
-            let id = node.id();
-            match self.node_indices.get(&id) {
-                Some(&mapped_idx) if mapped_idx == idx => {
-                    // This mapping is correct
-                }
-                Some(&mapped_idx) => {
-                    return Err(format!(
-                        "Inconsistent mapping: Node {:?} has index {:?} in graph but {:?} in mapping",
-                        id, idx, mapped_idx
-                    ));
-                }
-                None => {
-                    return Err(format!(
-                        "Missing mapping: Node {:?} at index {:?} has no mapping entry",
-                        id, idx
-                    ));
-                }
-            }
-        }
-
-        // Check that all entries in the mapping correspond to nodes in the graph
-        for (&id, &idx) in &self.node_indices {
-            if let Some(node) = self.graph.node_weight(idx) {
-                if node.id() != id {
-                    return Err(format!(
-                        "Invalid mapping: NodeId {:?} maps to index {:?}, but that index contains NodeId {:?}",
-                        id, idx, node.id()
-                    ));
-                }
-            } else {
+            if !algo::has_path_connecting(&self.graph, start_index, idx, None) {
                 return Err(format!(
-                    "Stale mapping: NodeId {:?} maps to index {:?}, but that index doesn't exist in the graph",
-                    id, idx
+                    "Node {:?} is unreachable from the start node",
+                    NodeId::from_index(idx)
                 ));
             }
         }
@@ -678,430 +339,222 @@ impl DialogueGraph {
         Ok(())
     }
 
-    /// Connect two nodes with connection data.
+    /// Returns all outward connections from the supplied node.
     ///
-    /// This method creates a connection from one node to another, specifying
-    /// how they relate (e.g., with a choice label or other properties).
+    /// The labels in the tuple are cloned from the underlying [`ConnectionData`] for convenience.
+    pub fn get_connected_nodes(&self, id: NodeId) -> Vec<(NodeId, Option<String>)> {
+        self.get_connections(id)
+            .into_iter()
+            .map(|(target, data)| (target, data.label.clone()))
+            .collect()
+    }
+
+    /// Returns the number of active nodes in the graph.
+    pub fn node_count(&self) -> usize {
+        self.graph.node_count()
+    }
+
+    /// Returns a collection of all node identifiers.
     ///
-    /// # Parameters
+    /// The order matches the internal storage order and can change when nodes are removed.
+    pub fn node_ids(&self) -> Vec<NodeId> {
+        self.graph.node_indices().map(NodeId::from_index).collect()
+    }
+
+    /// Returns an iterator over all nodes in the graph.
+    pub fn nodes_iter(&self) -> impl Iterator<Item = &DialogueNode> {
+        self.graph.node_weights()
+    }
+
+    /// Checks whether the supplied identifier refers to an active node.
     ///
-    /// * `from` - The ID of the source node
-    /// * `to` - The ID of the target node  
-    /// * `data` - The connection data containing label and other properties
+    /// This is a lightweight way to guard editor actions before attempting a mutation.
+    pub fn contains_node(&self, id: NodeId) -> bool {
+        self.node_index(id).is_some()
+    }
+
+    /// Replaces the contents of an existing node.
     ///
-    /// # Returns
+    /// Returns an error if the handle points to a node that no longer exists.
+    /// Consumers can use this to swap in edited dialogue data without reallocating IDs.
+    pub fn update_node(&mut self, id: NodeId, node: DialogueNode) -> Result<(), String> {
+        let idx = self.require_index(id)?;
+        if let Some(existing) = self.graph.node_weight_mut(idx) {
+            *existing = node;
+            Ok(())
+        } else {
+            Err(format!("Node {:?} not found", id))
+        }
+    }
+
+    /// Removes a node from the graph along with its connections.
     ///
-    /// Ok(()) if the connection was created successfully, or an error if either node doesn't exist
+    /// The method clears the start node automatically if the removed node was the entry point.
+    pub fn remove_node(&mut self, id: NodeId) -> Result<(), String> {
+        let idx = self.require_index(id)?;
+        if self.graph.remove_node(idx).is_some() {
+            if self.start_node == Some(id) {
+                self.start_node = None;
+            }
+            Ok(())
+        } else {
+            Err(format!("Node {:?} not found", id))
+        }
+    }
+
+    /// Creates a connection between two nodes using the provided edge data.
     ///
-    /// # Example
-    ///
-    /// ```rust
-    /// use funkus_dialogue::graph::{DialogueGraph, NodeId, ConnectionData};
-    ///
-    /// let mut graph = DialogueGraph::new(NodeId(1));
-    /// // Add nodes...
-    ///
-    /// // Connect with a label
-    /// graph.connect(NodeId(1), NodeId(2), ConnectionData::new(Some("Next".to_string()))).unwrap();
-    ///
-    /// // Connect without a label
-    /// graph.connect(NodeId(2), NodeId(3), ConnectionData::new(None)).unwrap();
-    /// ```
+    /// Errors are returned when either endpoint is missing, keeping petgraph's indices
+    /// out of the public API.
     pub fn connect(
         &mut self,
         from: NodeId,
         to: NodeId,
         data: ConnectionData,
     ) -> Result<(), String> {
-        let from_idx = self
-            .node_indices
-            .get(&from)
-            .ok_or_else(|| format!("Source node {:?} not found", from))?;
-        let to_idx = self
-            .node_indices
-            .get(&to)
-            .ok_or_else(|| format!("Target node {:?} not found", to))?;
-
-        self.graph.add_edge(*from_idx, *to_idx, data);
+        let from_idx = self.require_index(from)?;
+        let to_idx = self.require_index(to)?;
+        self.graph.add_edge(from_idx, to_idx, data);
         Ok(())
     }
 
-    /// Remove a connection between nodes.
+    /// Removes a connection between two nodes.
     ///
-    /// # Parameters
-    ///
-    /// * `from` - The ID of the source node
-    /// * `to` - The ID of the target node
-    ///
-    /// # Returns
-    ///
-    /// Ok(()) if the connection was removed, or an error if no connection exists
+    /// If no edge existed, an error is reported so tooling can surface the failure.
     pub fn disconnect(&mut self, from: NodeId, to: NodeId) -> Result<(), String> {
-        let from_idx = self
-            .node_indices
-            .get(&from)
-            .ok_or_else(|| format!("Source node {:?} not found", from))?;
-        let to_idx = self
-            .node_indices
-            .get(&to)
-            .ok_or_else(|| format!("Target node {:?} not found", to))?;
+        let from_idx = self.require_index(from)?;
+        let to_idx = self.require_index(to)?;
 
-        // Find edge between these nodes (if any)
-        let edges: Vec<_> = self
-            .graph
-            .edges_directed(*from_idx, petgraph::Direction::Outgoing)
-            .filter(|e| e.target() == *to_idx)
-            .map(|e| e.id())
-            .collect();
-
-        if edges.is_empty() {
-            return Err(format!("No connection from {:?} to {:?}", from, to));
-        }
-
-        // Remove all edges between these nodes
-        for edge_id in edges {
+        let mut removed = false;
+        while let Some(edge_id) = self.graph.find_edge(from_idx, to_idx) {
             self.graph.remove_edge(edge_id);
+            removed = true;
         }
 
-        Ok(())
+        if removed {
+            Ok(())
+        } else {
+            Err(format!("No connection from {:?} to {:?}", from, to))
+        }
     }
 
-    /// Get all connections from a node.
+    /// Retrieves all connections leaving a node, including their edge data.
     ///
-    /// # Parameters
-    ///
-    /// * `from` - The ID of the node to get connections from
-    ///
-    /// # Returns
-    ///
-    /// A vector of (target NodeId, ConnectionData) pairs
+    /// The returned vector borrows [`ConnectionData`] weights; callers that need owned labels
+    /// can use [`DialogueGraph::get_connected_nodes`] instead.
     pub fn get_connections(&self, from: NodeId) -> Vec<(NodeId, &ConnectionData)> {
-        if let Some(&node_idx) = self.node_indices.get(&from) {
-            let edges = self
-                .graph
-                .edges_directed(node_idx, petgraph::Direction::Outgoing);
-            edges
-                .filter_map(|edge| {
-                    let target_idx = edge.target();
-                    // Find NodeId for this target using node_indices in reverse
-                    let target_id = self.node_indices.iter().find_map(|(id, &idx)| {
-                        if idx == target_idx {
-                            Some(*id)
-                        } else {
-                            None
-                        }
-                    })?;
-
-                    Some((target_id, edge.weight()))
-                })
-                .collect()
-        } else {
-            Vec::new()
+        let mut results = Vec::new();
+        if let Some(index) = self.node_index(from) {
+            for edge in self.graph.edges_directed(index, Direction::Outgoing) {
+                let target_idx = edge.target();
+                if self.graph.contains_node(target_idx) {
+                    results.push((NodeId::from_index(target_idx), edge.weight()));
+                }
+            }
         }
+        results
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json;
 
-    // Helper function to create a basic test graph
-    fn create_test_graph() -> DialogueGraph {
-        let mut graph = DialogueGraph::new(NodeId(1));
-
-        // Add a few nodes
-        graph.add_node(DialogueNode::text(NodeId(1), "Start").with_speaker("NPC"));
-
-        // Add choice node (without connections)
-        let choice_node = DialogueNode::choice(NodeId(2))
-            .with_prompt("Choose:")
-            .unwrap();
-        graph.add_node(choice_node);
-
-        graph.add_node(DialogueNode::text(NodeId(3), "You chose A"));
-        graph.add_node(DialogueNode::text(NodeId(4), "You chose B"));
-
-        // Connect nodes using graph-based connections
-        graph
-            .connect(NodeId(1), NodeId(2), ConnectionData::new(None))
-            .unwrap();
-        graph
-            .connect(
-                NodeId(2),
-                NodeId(3),
-                ConnectionData::new(Some("Option A".to_string())),
-            )
-            .unwrap();
-        graph
-            .connect(
-                NodeId(2),
-                NodeId(4),
-                ConnectionData::new(Some("Option B".to_string())),
-            )
-            .unwrap();
+    fn build_sample_graph() -> (DialogueGraph, NodeId, NodeId, NodeId, NodeId) {
+        let mut graph = DialogueGraph::new().with_name("Sample");
+        let start = graph.add_node(DialogueNode::text("Start").with_speaker("Guide"));
+        let choice = graph.add_node(DialogueNode::choice().with_prompt("Pick one").unwrap());
+        let branch_a = graph.add_node(DialogueNode::text("A"));
+        let branch_b = graph.add_node(DialogueNode::text("B"));
 
         graph
+            .connect(start, choice, ConnectionData::new(None))
+            .unwrap();
+        graph
+            .connect(choice, branch_a, ConnectionData::new(Some("A".into())))
+            .unwrap();
+        graph
+            .connect(choice, branch_b, ConnectionData::new(Some("B".into())))
+            .unwrap();
+        graph.set_start_node(start).unwrap();
+
+        (graph, start, choice, branch_a, branch_b)
     }
 
     #[test]
-    fn test_create_graph() {
-        let graph = DialogueGraph::new(NodeId(5)).with_name("Test Graph");
+    fn add_node_assigns_stable_identifier() {
+        let mut graph = DialogueGraph::new();
+        let first = graph.add_node(DialogueNode::text("First"));
+        let second = graph.add_node(DialogueNode::text("Second"));
 
-        assert_eq!(graph.start_node, NodeId(5));
-        assert_eq!(graph.name, Some("Test Graph".to_string()));
-        assert_eq!(graph.node_count(), 0);
+        assert_ne!(first, second);
+        assert!(graph.contains_node(first));
+        assert!(graph.contains_node(second));
+
+        assert_eq!(
+            graph.get_node(first).and_then(|node| match node {
+                DialogueNode::Text { text, .. } => Some(text),
+                _ => None,
+            }),
+            Some(&"First".to_string())
+        );
     }
 
     #[test]
-    fn test_add_nodes() {
-        let mut graph = DialogueGraph::new(NodeId(1));
+    fn validate_requires_reachability() {
+        let (mut graph, start, _, branch_a, _) = build_sample_graph();
+        assert!(graph.validate().is_ok());
 
-        graph.add_node(DialogueNode::text(NodeId(1), "Node 1"));
-        assert_eq!(graph.node_count(), 1);
+        let isolated = graph.add_node(DialogueNode::text("Isolated"));
+        assert!(graph.validate().is_err());
 
-        let node = graph.get_node(NodeId(1)).unwrap();
-        if let DialogueNode::Text { text, .. } = node {
-            assert_eq!(text, "Node 1");
-        } else {
-            panic!("Expected Text node");
-        }
+        graph
+            .connect(branch_a, isolated, ConnectionData::new(None))
+            .unwrap();
+        assert!(graph.validate().is_ok());
 
-        // Test builder pattern
-        let graph = graph.with_node(DialogueNode::text(NodeId(2), "Node 2"));
-        assert_eq!(graph.node_count(), 2);
+        graph.remove_node(start).unwrap();
+        assert!(graph.validate().is_err());
     }
 
     #[test]
-    fn test_connections() {
-        let graph = create_test_graph();
+    fn connect_and_disconnect_edges() {
+        let (mut graph, start, _, branch_a, branch_b) = build_sample_graph();
 
-        // Test connected nodes
-        let connections = graph.get_connected_nodes(NodeId(1));
-        assert_eq!(connections.len(), 1);
-        assert_eq!(connections[0].0, NodeId(2));
+        assert_eq!(graph.get_connected_nodes(start).len(), 1);
+        assert!(graph.disconnect(start, branch_a).is_err());
 
-        // Test get_start_node
-        let start = graph.get_start_node().unwrap();
-        if let DialogueNode::Text { speaker, .. } = start {
-            assert_eq!(speaker.clone(), Some("NPC".to_string())); // Fixed: clone the Option<String>
-        } else {
-            panic!("Expected Text node");
-        }
-    }
+        graph
+            .connect(start, branch_a, ConnectionData::new(Some("direct".into())))
+            .unwrap();
+        assert_eq!(graph.get_connected_nodes(start).len(), 2);
 
-    #[test]
-    fn test_node_access() {
-        let mut graph = create_test_graph();
+        graph.disconnect(start, branch_a).unwrap();
+        assert_eq!(graph.get_connected_nodes(start).len(), 1);
 
-        // Test contains_node
-        assert!(graph.contains_node(NodeId(1)));
-        assert!(!graph.contains_node(NodeId(99)));
-
-        // Test get_node_mut
-        if let Some(node) = graph.get_node_mut(NodeId(3)) {
-            if let DialogueNode::Text { text, .. } = node {
-                *text = "Modified text".to_string();
-            }
-        }
-
-        let modified = graph.get_node(NodeId(3)).unwrap();
-        if let DialogueNode::Text { text, .. } = modified {
-            assert_eq!(text, "Modified text");
-        } else {
-            panic!("Expected Text node");
-        }
-    }
-
-    #[test]
-    fn test_update_node() {
-        let mut graph = create_test_graph();
-
-        let new_node = DialogueNode::text(NodeId(3), "Updated node");
-        graph.update_node(NodeId(3), new_node).unwrap();
-
-        let updated = graph.get_node(NodeId(3)).unwrap();
-        if let DialogueNode::Text { text, .. } = updated {
-            assert_eq!(text, "Updated node");
-        } else {
-            panic!("Expected Text node");
-        }
-
-        // Test updating non-existent node
+        assert!(graph.disconnect(start, branch_a).is_err());
         assert!(graph
-            .update_node(NodeId(99), DialogueNode::text(NodeId(99), "Bad"))
+            .connect(branch_b, NodeId::from_raw(999), ConnectionData::new(None))
             .is_err());
     }
 
     #[test]
-    fn test_node_removal() {
-        let mut graph = create_test_graph();
-        assert_eq!(graph.node_count(), 4);
-
-        // Remove a node in the middle
-        graph.remove_node(NodeId(2)).unwrap();
-        assert_eq!(graph.node_count(), 3);
-        assert!(!graph.contains_node(NodeId(2)));
-
-        // Ensure we can still access other nodes
-        assert!(graph.get_node(NodeId(1)).is_some());
-        assert!(graph.get_node(NodeId(3)).is_some());
-        assert!(graph.get_node(NodeId(4)).is_some());
-
-        // Test removing the last node
-        let last_id = NodeId(4);
-        graph.remove_node(last_id).unwrap();
-        assert_eq!(graph.node_count(), 2);
-        assert!(!graph.contains_node(last_id));
-
-        // Test error on removing non-existent node
-        assert!(graph.remove_node(NodeId(99)).is_err());
+    fn removing_start_node_clears_assignment() {
+        let (mut graph, start, _, _, _) = build_sample_graph();
+        assert_eq!(graph.start_node, Some(start));
+        graph.remove_node(start).unwrap();
+        assert!(graph.start_node.is_none());
     }
 
     #[test]
-    fn test_node_removal_swapping() {
-        // This test specifically verifies the index swapping behavior
-        let mut graph = DialogueGraph::new(NodeId(1));
+    fn serialization_round_trip_preserves_structure() {
+        let (graph, _, _, _, _) = build_sample_graph();
+        let json = serde_json::to_string(&graph).unwrap();
+        let restored: DialogueGraph = serde_json::from_str(&json).unwrap();
 
-        // Add nodes in sequence
-        for i in 1..=5 {
-            graph.add_node(DialogueNode::text(NodeId(i), format!("Node {}", i)));
-        }
-
-        // Remove node 2 - this should cause node 5 to be moved to index 1
-        graph.remove_node(NodeId(2)).unwrap();
-
-        // Verify we can still access node 5
-        let node5 = graph.get_node(NodeId(5));
-        assert!(node5.is_some());
-
-        // Add a connection that uses node 5
-        graph
-            .connect(NodeId(1), NodeId(5), ConnectionData::new(None))
-            .unwrap();
-
-        // Verify the connection works
-        let connections = graph.get_connected_nodes(NodeId(1));
-        assert_eq!(connections.len(), 1);
-        assert_eq!(connections[0].0, NodeId(5));
-
-        // Validate the mapping explicitly
-        #[cfg(debug_assertions)]
-        graph.validate_mapping().unwrap();
-    }
-
-    #[test]
-    fn test_graph_validation() {
-        let mut graph = DialogueGraph::new(NodeId(1));
-
-        // Empty graph should fail validation (start node doesn't exist)
-        assert!(graph.validate().is_err());
-
-        // Add start node
-        graph.add_node(DialogueNode::text(NodeId(1), "Start"));
-        assert!(graph.validate().is_ok());
-
-        // Add unreachable node - should fail validation
-        graph.add_node(DialogueNode::text(NodeId(2), "Unreachable"));
-        assert!(graph.validate().is_err());
-
-        // Connect nodes - should pass validation
-        graph
-            .connect(NodeId(1), NodeId(2), ConnectionData::new(None))
-            .unwrap();
-        assert!(graph.validate().is_ok());
-    }
-
-    #[test]
-    fn test_rebuild_mapping() {
-        let mut graph = create_test_graph();
-
-        // Extract text values from nodes before rebuilding mapping
-        let text1 = if let DialogueNode::Text { text, .. } = graph.get_node(NodeId(1)).unwrap() {
-            text.clone()
-        } else {
-            panic!("Expected Text node");
-        };
-
-        let text3 = if let DialogueNode::Text { text, .. } = graph.get_node(NodeId(3)).unwrap() {
-            text.clone()
-        } else {
-            panic!("Expected Text node");
-        };
-
-        // Rebuild the mapping
-        graph.rebuild_mapping();
-
-        // Verify nodes are still accessible with the same content
-        if let DialogueNode::Text { text, .. } = graph.get_node(NodeId(1)).unwrap() {
-            assert_eq!(text, &text1);
-        } else {
-            panic!("Node type mismatch");
-        }
-
-        if let DialogueNode::Text { text, .. } = graph.get_node(NodeId(3)).unwrap() {
-            assert_eq!(text, &text3);
-        } else {
-            panic!("Node type mismatch");
-        }
-
-        // Validate mapping consistency
-        #[cfg(debug_assertions)]
-        graph.validate_mapping().unwrap();
-    }
-
-    #[test]
-    fn test_node_iteration() {
-        let graph = create_test_graph();
-
-        // Test nodes_iter
-        let nodes: Vec<_> = graph.nodes_iter().collect();
-        assert_eq!(nodes.len(), 4);
-
-        // Test node_ids
-        let ids = graph.node_ids();
-        assert_eq!(ids.len(), 4);
-        assert!(ids.contains(&NodeId(1)));
-        assert!(ids.contains(&NodeId(2)));
-        assert!(ids.contains(&NodeId(3)));
-        assert!(ids.contains(&NodeId(4)));
-    }
-
-    #[test]
-    fn test_serialization() {
-        use serde_json;
-
-        let original = create_test_graph();
-
-        // Serialize to JSON
-        let json = serde_json::to_string(&original).unwrap();
-
-        // Deserialize back to a graph
-        let deserialized: DialogueGraph = serde_json::from_str(&json).unwrap();
-
-        // Verify structure is preserved
-        assert_eq!(deserialized.start_node, original.start_node);
-        assert_eq!(deserialized.node_count(), original.node_count());
-
-        // Check node contents - extract text to avoid borrowing issues
-        let original_text =
-            if let DialogueNode::Text { text, .. } = original.get_node(NodeId(1)).unwrap() {
-                text.clone()
-            } else {
-                panic!("Expected Text node");
-            };
-
-        if let DialogueNode::Text { text, .. } = deserialized.get_node(NodeId(1)).unwrap() {
-            assert_eq!(text, &original_text);
-        } else {
-            panic!("Node type mismatch");
-        }
-
-        // Verify connections are preserved
-        let orig_connections = original.get_connected_nodes(NodeId(1));
-        let de_connections = deserialized.get_connected_nodes(NodeId(1));
-        assert_eq!(orig_connections.len(), de_connections.len());
-        if !orig_connections.is_empty() && !de_connections.is_empty() {
-            assert_eq!(orig_connections[0].0, de_connections[0].0);
-        }
+        assert_eq!(graph.node_count(), restored.node_count());
+        assert_eq!(graph.name, restored.name);
+        assert_eq!(graph.start_node.is_some(), restored.start_node.is_some());
     }
 }

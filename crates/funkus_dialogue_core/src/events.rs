@@ -117,7 +117,7 @@ pub struct DialogueStarted {
 /// fn track_node_activation(mut node_events: EventReader<DialogueNodeActivated>) {
 ///     for event in node_events.read() {
 ///         // Trigger game events based on specific nodes
-///         if event.node_id == NodeId(5) {
+///         if event.node_id == NodeId::from_raw(5) {
 ///             println!("Special node activated!");
 ///             // Trigger special game event
 ///         }
