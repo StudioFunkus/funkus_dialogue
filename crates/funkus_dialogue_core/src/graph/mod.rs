@@ -43,7 +43,7 @@
 /// ## Example Usage
 ///
 /// ```rust
-/// use funkus_dialogue::graph::{ConnectionData, DialogueGraph, DialogueNode};
+/// use funkus_dialogue_core::graph::{ConnectionData, DialogueGraph, DialogueNode};
 ///
 /// let mut graph = DialogueGraph::new().with_name("Simple Dialogue");
 ///

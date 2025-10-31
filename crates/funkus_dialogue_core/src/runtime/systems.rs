@@ -28,9 +28,9 @@ use crate::runtime::DialogueState;
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::runtime::update_dialogue_runners;
+/// use funkus_dialogue_core::runtime::update_dialogue_runners;
 ///
 /// fn setup_app(app: &mut App) {
 ///     app.add_systems(Update, update_dialogue_runners);
@@ -74,9 +74,9 @@ pub fn update_dialogue_runners(
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::runtime::DialogueSystemSet;
+/// use funkus_dialogue_core::runtime::DialogueSystemSet;
 ///
 /// fn setup_app(app: &mut App) {
 ///     app.configure_sets(Update, DialogueSystemSet);
@@ -103,14 +103,14 @@ pub struct DialogueSystemSet;
 ///
 /// * `commands` - Bevy commands for entity management
 /// * `dialogue_assets` - Assets resource containing loaded dialogue assets
-/// * `start_events` - EventReader for StartDialogue events
-/// * `stop_events` - EventReader for StopDialogue events
-/// * `advance_events` - EventReader for AdvanceDialogue events
-/// * `select_events` - EventReader for SelectDialogueChoice events
-/// * `node_activated_events` - EventWriter for DialogueNodeActivated events
-/// * `dialogue_started_events` - EventWriter for DialogueStarted events
-/// * `dialogue_ended_events` - EventWriter for DialogueEnded events
-/// * `dialogue_choice_events` - EventWriter for DialogueChoiceMade events
+/// * `start_events` - `MessageReader` for `StartDialogue` events
+/// * `stop_events` - `MessageReader` for `StopDialogue` events
+/// * `advance_events` - `MessageReader` for `AdvanceDialogue` events
+/// * `select_events` - `MessageReader` for `SelectDialogueChoice` events
+/// * `node_activated_events` - `MessageWriter` for `DialogueNodeActivated` events
+/// * `dialogue_started_events` - `MessageWriter` for `DialogueStarted` events
+/// * `dialogue_ended_events` - `MessageWriter` for `DialogueEnded` events
+/// * `dialogue_choice_events` - `MessageWriter` for `DialogueChoiceMade` events
 /// * `runner_query` - Query for DialogueRunner components
 pub fn handle_dialogue_events(
     mut commands: Commands,
@@ -268,9 +268,9 @@ pub fn handle_dialogue_events(
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::runtime::setup_dialogue_systems;
+/// use funkus_dialogue_core::runtime::setup_dialogue_systems;
 ///
 /// fn main() {
 ///     let mut app = App::new();

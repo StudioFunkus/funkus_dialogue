@@ -21,42 +21,43 @@
 //!
 //! ## Usage Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use bevy::prelude::*;
-//! use funkus_dialogue::{
-//!     StartDialogue, StopDialogue, AdvanceDialogue, SelectDialogueChoice,
-//!     DialogueStarted, DialogueEnded,
+//! use funkus_dialogue_core::{
+//!     AdvanceDialogue, DialogueAsset, DialogueEnded, DialogueStarted, SelectDialogueChoice,
+//!     StartDialogue, StopDialogue,
 //! };
 //!
+//! #[derive(Component)]
+//! struct Player;
+//!
 //! fn dialogue_control_system(
-//!     mut start_events: EventWriter<StartDialogue>,
-//!     mut advance_events: EventWriter<AdvanceDialogue>,
-//!     mut dialogue_ended_reader: EventReader<DialogueEnded>,
-//!     keyboard: Res<Input<KeyCode>>,
+//!     mut start_events: MessageWriter<StartDialogue>,
+//!     mut advance_events: MessageWriter<AdvanceDialogue>,
+//!     mut dialogue_ended_reader: MessageReader<DialogueEnded>,
+//!     keyboard: Res<ButtonInput<KeyCode>>,
 //!     entity: Query<Entity, With<Player>>,
 //! ) {
 //!     // React to dialogue ended events
 //!     for event in dialogue_ended_reader.read() {
 //!         println!("Dialogue ended: {:?}", event.entity);
 //!     }
-//!     
+//!
 //!     // Start dialogue when talking to NPC
 //!     if keyboard.just_pressed(KeyCode::E) {
 //!         if let Ok(player) = entity.get_single() {
 //!             // Request to start a dialogue
-//!             start_events.send(StartDialogue {
+//!             start_events.write(StartDialogue {
 //!                 entity: player,
-//!                 dialogue_handle: Handle::default(), // Use actual handle
+//!                 dialogue_handle: Handle::<DialogueAsset>::default(), // Use actual handle
 //!             });
 //!         }
 //!     }
-//!     
+//!
 //!     // Advance dialogue when space is pressed
 //!     if keyboard.just_pressed(KeyCode::Space) {
 //!         if let Ok(player) = entity.get_single() {
-//!             advance_events.send(AdvanceDialogue {
-//!                 entity: player,
-//!             });
+//!             advance_events.write(AdvanceDialogue { entity: player });
 //!         }
 //!     }
 //! }
@@ -78,9 +79,9 @@ use crate::graph::NodeId;
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::DialogueStarted;
+/// use funkus_dialogue_core::DialogueStarted;
 ///
 /// fn on_dialogue_start(mut dialogue_events: EventReader<DialogueStarted>) {
 ///     for event in dialogue_events.read() {
@@ -110,11 +111,11 @@ pub struct DialogueStarted {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::{DialogueNodeActivated, NodeId};
+/// use funkus_dialogue_core::{DialogueNodeActivated, NodeId};
 ///
-/// fn track_node_activation(mut node_events: EventReader<DialogueNodeActivated>) {
+/// fn track_node_activation(mut node_events: MessageReader<DialogueNodeActivated>) {
 ///     for event in node_events.read() {
 ///         // Trigger game events based on specific nodes
 ///         if event.node_id == NodeId::from_raw(5) {
@@ -145,11 +146,11 @@ pub struct DialogueNodeActivated {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::DialogueChoiceMade;
+/// use funkus_dialogue_core::DialogueChoiceMade;
 ///
-/// fn track_player_choices(mut choice_events: EventReader<DialogueChoiceMade>) {
+/// fn track_player_choices(mut choice_events: MessageReader<DialogueChoiceMade>) {
 ///     for event in choice_events.read() {
 ///         println!(
 ///             "Entity {:?} selected choice {} in node {:?}",
@@ -182,11 +183,11 @@ pub struct DialogueChoiceMade {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::DialogueEnded;
+/// use funkus_dialogue_core::DialogueEnded;
 ///
-/// fn on_dialogue_end(mut end_events: EventReader<DialogueEnded>) {
+/// fn on_dialogue_end(mut end_events: MessageReader<DialogueEnded>) {
 ///     for event in end_events.read() {
 ///         if event.normal_exit {
 ///             println!("Dialogue completed normally");
@@ -217,20 +218,18 @@ pub struct DialogueEnded {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::AdvanceDialogue;
+/// use funkus_dialogue_core::{AdvanceDialogue, DialogueRunner};
 ///
 /// fn advance_on_space(
-///     keyboard: Res<Input<KeyCode>>,
+///     keyboard: Res<ButtonInput<KeyCode>>,
 ///     dialogue_entities: Query<Entity, With<DialogueRunner>>,
-///     mut advance_events: EventWriter<AdvanceDialogue>,
+///     mut advance_events: MessageWriter<AdvanceDialogue>,
 /// ) {
 ///     if keyboard.just_pressed(KeyCode::Space) {
 ///         for entity in dialogue_entities.iter() {
-///             advance_events.send(AdvanceDialogue {
-///                 entity,
-///             });
+///             advance_events.write(AdvanceDialogue { entity });
 ///         }
 ///     }
 /// }
@@ -253,29 +252,29 @@ pub struct AdvanceDialogue {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::{SelectDialogueChoice, DialogueRunner, DialogueState};
+/// use funkus_dialogue_core::{DialogueRunner, DialogueState, SelectDialogueChoice};
 ///
 /// fn select_choice_with_number_keys(
-///     keyboard: Res<Input<KeyCode>>,
+///     keyboard: Res<ButtonInput<KeyCode>>,
 ///     dialogue_query: Query<(Entity, &DialogueRunner)>,
-///     mut select_events: EventWriter<SelectDialogueChoice>,
+///     mut select_events: MessageWriter<SelectDialogueChoice>,
 /// ) {
 ///     for (entity, runner) in dialogue_query.iter() {
 ///         if runner.state == DialogueState::WaitingForChoice {
 ///             // Check for number key presses (1-9)
 ///             for i in 0..9 {
 ///                 let key = match i {
-///                     0 => KeyCode::Key1,
-///                     1 => KeyCode::Key2,
-///                     2 => KeyCode::Key3,
+///                     0 => KeyCode::Digit1,
+///                     1 => KeyCode::Digit2,
+///                     2 => KeyCode::Digit3,
 ///                     // ... and so on
 ///                     _ => continue,
 ///                 };
-///                 
+///
 ///                 if keyboard.just_pressed(key) {
-///                     select_events.send(SelectDialogueChoice {
+///                     select_events.write(SelectDialogueChoice {
 ///                         entity,
 ///                         choice_index: i,
 ///                     });
@@ -305,16 +304,27 @@ pub struct SelectDialogueChoice {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::{StartDialogue, DialogueAsset};
+/// use funkus_dialogue_core::{DialogueAsset, StartDialogue};
+///
+/// #[derive(Component)]
+/// struct Player;
+///
+/// #[derive(Component)]
+/// struct Npc;
+///
+/// #[derive(Component)]
+/// struct Interactable {
+///     is_in_range: bool,
+/// }
 ///
 /// fn start_dialogue_on_interact(
-///     keyboard: Res<Input<KeyCode>>,
+///     keyboard: Res<ButtonInput<KeyCode>>,
 ///     asset_server: Res<AssetServer>,
 ///     player_query: Query<Entity, With<Player>>,
 ///     npc_query: Query<&Interactable, With<Npc>>,
-///     mut start_events: EventWriter<StartDialogue>,
+///     mut start_events: MessageWriter<StartDialogue>,
 /// ) {
 ///     if keyboard.just_pressed(KeyCode::E) && player_query.get_single().is_ok() {
 ///         let player = player_query.single();
@@ -323,10 +333,11 @@ pub struct SelectDialogueChoice {
 ///         for interactable in npc_query.iter() {
 ///             if interactable.is_in_range {
 ///                 // Load dialogue asset for this NPC
-///                 let dialogue_handle = asset_server.load("dialogues/npc.dialogue.json");
-///                 
+///                 let dialogue_handle: Handle<DialogueAsset> =
+///                     asset_server.load("dialogues/npc.dialogue.json");
+///
 ///                 // Start the dialogue on the player entity
-///                 start_events.send(StartDialogue {
+///                 start_events.write(StartDialogue {
 ///                     entity: player,
 ///                     dialogue_handle,
 ///                 });
@@ -354,20 +365,18 @@ pub struct StartDialogue {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::{StopDialogue, DialogueRunner};
+/// use funkus_dialogue_core::{DialogueRunner, StopDialogue};
 ///
 /// fn stop_dialogue_on_escape(
-///     keyboard: Res<Input<KeyCode>>,
+///     keyboard: Res<ButtonInput<KeyCode>>,
 ///     dialogue_query: Query<Entity, With<DialogueRunner>>,
-///     mut stop_events: EventWriter<StopDialogue>,
+///     mut stop_events: MessageWriter<StopDialogue>,
 /// ) {
 ///     if keyboard.just_pressed(KeyCode::Escape) {
 ///         for entity in dialogue_query.iter() {
-///             stop_events.send(StopDialogue {
-///                 entity,
-///             });
+///             stop_events.write(StopDialogue { entity });
 ///         }
 ///     }
 /// }

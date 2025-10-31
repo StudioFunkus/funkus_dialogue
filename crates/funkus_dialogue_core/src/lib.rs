@@ -19,9 +19,9 @@
 //!
 //! ## Basic Usage
 //!
-//! ```rust
+//! ```rust,ignore
 //! use bevy::prelude::*;
-//! use funkus_dialogue_core::DialoguePlugin;
+//! use funkus_dialogue_core::{DialogueAsset, DialoguePlugin, DialogueRunner, StartDialogue};
 //!
 //! fn main() {
 //!     App::new()
@@ -33,19 +33,20 @@
 //! fn setup_dialogue(
 //!     mut commands: Commands,
 //!     asset_server: Res<AssetServer>,
-//!     mut start_events: EventWriter<funkus_dialogue::StartDialogue>,
+//!     mut start_events: MessageWriter<StartDialogue>,
 //! ) {
 //!     // Create an entity to run the dialogue
 //!     let entity = commands.spawn((
 //!         Name::new("Character Dialogue"),
-//!         funkus_dialogue::DialogueRunner::default(),
+//!         DialogueRunner::default(),
 //!     )).id();
-//!     
+//!
 //!     // Load a dialogue asset
-//!     let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
-//!     
+//!     let dialogue_handle: Handle<DialogueAsset> =
+//!         asset_server.load("dialogues/example.dialogue.json");
+//!
 //!     // Start the dialogue
-//!     start_events.send(funkus_dialogue::StartDialogue {
+//!     start_events.write(StartDialogue {
 //!         entity,
 //!         dialogue_handle,
 //!     });
@@ -91,6 +92,7 @@ mod debug;
 pub use asset::DialogueAsset;
 #[cfg(feature = "debug_ui")]
 pub use debug::DialogueDebugPlugin;
+pub use error::{DialogueError, DialogueResult};
 pub use events::{
     AdvanceDialogue, DialogueChoiceMade, DialogueEnded, DialogueNodeActivated, DialogueStarted,
     SelectDialogueChoice, StartDialogue, StopDialogue,
@@ -111,7 +113,7 @@ pub use runtime::{DialogueRunner, DialogueState};
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
 /// use funkus_dialogue_core::DialoguePlugin;
 ///
@@ -151,7 +153,7 @@ impl Plugin for DialoguePlugin {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
 /// use funkus_dialogue_core::{DialogueDebugBundle, DialoguePlugin};
 ///

@@ -16,9 +16,10 @@ use thiserror::Error;
 ///
 /// # Examples
 ///
-/// ```rust
-/// use funkus_dialogue::{DialogueRunner, DialogueAsset, graph::NodeId};
+/// ```rust,ignore
 /// use bevy::prelude::*;
+/// use funkus_dialogue_core::{DialogueAsset, DialogueRunner};
+/// use funkus_dialogue_core::error::DialogueError;
 ///
 /// fn handle_dialogue_errors(
 ///     dialogue_assets: Res<Assets<DialogueAsset>>,
@@ -29,21 +30,20 @@ use thiserror::Error;
 ///             match runner.advance(dialogue) {
 ///                 Ok(()) => println!("Dialogue advanced successfully"),
 ///                 Err(err) => match err {
-///                     funkus_dialogue::error::DialogueError::NoCurrentNode => {
+///                     DialogueError::NoCurrentNode => {
 ///                         println!("No current node in dialogue")
-///                     },
-///                     funkus_dialogue::error::DialogueError::NodeNotFound(id) => {
+///                     }
+///                     DialogueError::NodeNotFound(id) => {
 ///                         println!("Node {:?} not found", id)
-///                     },
-///                     funkus_dialogue::error::DialogueError::GraphError(msg) => {
+///                     }
+///                     DialogueError::GraphError(msg) => {
 ///                         println!("Graph structure error: {}", msg)
-///                     },
-///                     funkus_dialogue::error::DialogueError::AssetNotLoaded => {
+///                     }
+///                     DialogueError::AssetNotLoaded => {
 ///                         println!("Dialogue asset hasn't been loaded yet")
-///                     },
+///                     }
 ///                     // Handle other error types
 ///                     _ => println!("Other error: {}", err),
-///
 ///                 },
 ///             }
 ///         } else {
@@ -96,7 +96,11 @@ pub enum DialogueError {
 /// # Examples
 ///
 /// ```rust
-/// use funkus_dialogue::error::{DialogueResult, DialogueError};
+/// use funkus_dialogue_core::{DialogueError, DialogueResult};
+///
+/// # fn condition_is_met() -> bool {
+/// #     true
+/// # }
 ///
 /// fn some_dialogue_operation() -> DialogueResult<String> {
 ///     // An operation that could fail

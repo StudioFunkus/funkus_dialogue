@@ -16,9 +16,10 @@ use serde::{Deserialize, Serialize};
 /// # Example
 ///
 /// ```rust
-/// use funkus_dialogue::graph::NodeId;
+/// use funkus_dialogue_core::graph::NodeId;
 ///
 /// let id = NodeId::from_raw(1);
+/// assert_eq!(id.raw(), 1);
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Reflect, Serialize, Deserialize)]
 #[serde(crate = "serde")]
@@ -69,12 +70,14 @@ impl NodeId {
 /// # Example
 ///
 /// ```rust
-/// use funkus_dialogue::graph::{Connection, NodeId};
+/// use funkus_dialogue_core::graph::{Connection, NodeId};
 ///
 /// let connection = Connection {
 ///     target_id: NodeId::from_raw(2),
 ///     label: Some("Go to the castle".to_string()),
 /// };
+///
+/// assert_eq!(connection.label.as_deref(), Some("Go to the castle"));
 /// ```
 #[derive(Debug, Clone, Reflect, Serialize, Deserialize)]
 #[serde(crate = "serde")]
@@ -116,7 +119,7 @@ impl ConnectionData {
 /// # Example Implementation
 ///
 /// ```rust
-/// use funkus_dialogue::graph::DialogueNode;
+/// use funkus_dialogue_core::graph::{DialogueElement, DialogueNode};
 ///
 /// enum MyDialogueNode {
 ///     Simple {

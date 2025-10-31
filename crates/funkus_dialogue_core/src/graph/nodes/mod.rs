@@ -21,7 +21,7 @@ use super::node::DialogueElement;
 /// identifiers and managing connections between them.
 ///
 /// ```rust
-/// use funkus_dialogue::graph::{ConnectionData, DialogueGraph, DialogueNode};
+/// use funkus_dialogue_core::graph::{ConnectionData, DialogueGraph, DialogueNode};
 ///
 /// let mut graph = DialogueGraph::new();
 /// let start = graph.add_node(DialogueNode::text("Hello!"));
@@ -127,7 +127,7 @@ impl DialogueNode {
     /// # Example
     ///
     /// ```rust
-    /// use funkus_dialogue::graph::DialogueNode;
+    /// use funkus_dialogue_core::graph::DialogueNode;
     ///
     /// let node = DialogueNode::text("Hello there!")
     ///     .with_speaker("Guide");
@@ -142,7 +142,7 @@ impl DialogueNode {
     /// # Example
     ///
     /// ```rust
-    /// use funkus_dialogue::graph::DialogueNode;
+    /// use funkus_dialogue_core::graph::DialogueNode;
     ///
     /// let node = DialogueNode::text("Hello there!")
     ///     .with_portrait("guide_happy");
@@ -157,7 +157,7 @@ impl DialogueNode {
     /// # Example
     ///
     /// ```rust
-    /// use funkus_dialogue::graph::DialogueNode;
+    /// use funkus_dialogue_core::graph::DialogueNode;
     ///
     /// let node = DialogueNode::choice()
     ///     .with_prompt("What do you do next?").unwrap();

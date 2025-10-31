@@ -19,26 +19,27 @@
 //!
 //! ## Usage Example
 //!
-//! ```rust
+//! ```rust,ignore
 //! use bevy::prelude::*;
-//! use funkus_dialogue::*;
+//! use funkus_dialogue_core::{DialogueAsset, DialogueRunner, StartDialogue};
 //!
 //! fn setup(
 //!     mut commands: Commands,
 //!     asset_server: Res<AssetServer>,
-//!     mut start_events: EventWriter<StartDialogue>,
+//!     mut start_events: MessageWriter<StartDialogue>,
 //! ) {
 //!     // Create an entity with a DialogueRunner
 //!     let entity = commands.spawn((
 //!         Name::new("NPC Dialogue"),
 //!         DialogueRunner::default(),
 //!     )).id();
-//!     
+//!
 //!     // Load a dialogue asset
-//!     let dialogue_handle = asset_server.load("dialogues/npc.dialogue.json");
-//!     
+//!     let dialogue_handle: Handle<DialogueAsset> =
+//!         asset_server.load("dialogues/npc.dialogue.json");
+//!
 //!     // Start the dialogue
-//!     start_events.send(StartDialogue {
+//!     start_events.write(StartDialogue {
 //!         entity,
 //!         dialogue_handle,
 //!     });

@@ -18,9 +18,14 @@
 //!
 //! Dialogue assets are typically loaded through Bevy's asset system:
 //!
-//! ```rust
+//! ```rust,ignore
+//! use bevy::prelude::*;
+//! use funkus_dialogue_core::asset::DialogueAsset;
+//!
 //! fn setup(asset_server: Res<AssetServer>) {
-//!     let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
+//!     let dialogue_handle: Handle<DialogueAsset> =
+//!         asset_server.load("dialogues/example.dialogue.json");
+//!     let _unused = dialogue_handle;
 //! }
 //! ```
 

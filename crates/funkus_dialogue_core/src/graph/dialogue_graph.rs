@@ -6,7 +6,7 @@
 //! those identifiers remain valid even after other nodes are removed.
 //!
 //! ```rust
-//! use funkus_dialogue::graph::{ConnectionData, DialogueGraph, DialogueNode};
+//! use funkus_dialogue_core::graph::{ConnectionData, DialogueGraph, DialogueNode};
 //!
 //! let mut graph = DialogueGraph::new().with_name("Greeting");
 //! let start = graph.add_node(DialogueNode::text("Hello!").with_speaker("Guide"));

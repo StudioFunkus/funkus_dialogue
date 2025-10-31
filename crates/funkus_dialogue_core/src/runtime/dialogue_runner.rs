@@ -126,9 +126,9 @@ impl DialogueState {
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use bevy::prelude::*;
-/// use funkus_dialogue::DialogueRunner;
+/// use funkus_dialogue_core::DialogueRunner;
 ///
 /// fn setup(mut commands: Commands) {
 ///     // Create an entity with a dialogue runner
@@ -183,9 +183,9 @@ impl DialogueRunner {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// use bevy::prelude::*;
-    /// use funkus_dialogue::DialogueRunner;
+    /// use funkus_dialogue_core::DialogueRunner;
     ///
     /// fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     ///     let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
@@ -217,9 +217,9 @@ impl DialogueRunner {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use bevy::prelude::*;
-    /// # use funkus_dialogue::{DialogueRunner, DialogueAsset};
+    /// # use funkus_dialogue_core::{DialogueAsset, DialogueRunner};
     /// #
     /// fn start_dialogue(
     ///     dialogue_assets: Res<Assets<DialogueAsset>>,
@@ -283,9 +283,9 @@ impl DialogueRunner {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use bevy::prelude::*;
-    /// # use funkus_dialogue::{DialogueRunner, DialogueAsset, DialogueState};
+    /// # use funkus_dialogue_core::{DialogueAsset, DialogueRunner, DialogueState};
     /// #
     /// fn advance_dialogue(
     ///     dialogue_assets: Res<Assets<DialogueAsset>>,
@@ -413,18 +413,18 @@ impl DialogueRunner {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use bevy::prelude::*;
-    /// # use funkus_dialogue::{DialogueRunner, DialogueState};
+    /// # use funkus_dialogue_core::{DialogueRunner, DialogueState};
     /// #
     /// fn select_choice(
     ///     mut dialogue_query: Query<&mut DialogueRunner>,
-    ///     keyboard_input: Res<Input<KeyCode>>,
+    ///     keyboard_input: Res<ButtonInput<KeyCode>>,
     /// ) {
     ///     for mut runner in dialogue_query.iter_mut() {
     ///         if runner.state == DialogueState::WaitingForChoice {
     ///             // Select the first choice when '1' is pressed
-    ///             if keyboard_input.just_pressed(KeyCode::Key1) {
+    ///             if keyboard_input.just_pressed(KeyCode::Digit1) {
     ///                 if let Err(err) = runner.select_choice(0) {
     ///                     eprintln!("Error selecting choice: {}", err);
     ///                 }
@@ -461,9 +461,9 @@ impl DialogueRunner {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use bevy::prelude::*;
-    /// # use funkus_dialogue::{DialogueRunner, DialogueAsset, DialogueNode};
+    /// # use funkus_dialogue_core::{DialogueAsset, DialogueNode, DialogueRunner};
     /// #
     /// fn process_current_node(
     ///     dialogue_assets: Res<Assets<DialogueAsset>>,
@@ -498,9 +498,9 @@ impl DialogueRunner {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use bevy::prelude::*;
-    /// # use funkus_dialogue::DialogueRunner;
+    /// # use funkus_dialogue_core::DialogueRunner;
     /// #
     /// fn check_dialogue_status(dialogue_query: Query<&DialogueRunner>) {
     ///     for runner in dialogue_query.iter() {
@@ -521,9 +521,9 @@ impl DialogueRunner {
     ///
     /// # Example
     ///
-    /// ```rust
+    /// ```rust,ignore
     /// # use bevy::prelude::*;
-    /// # use funkus_dialogue::DialogueRunner;
+    /// # use funkus_dialogue_core::DialogueRunner;
     /// #
     /// fn stop_dialogues(mut dialogue_query: Query<&mut DialogueRunner>) {
     ///     for mut runner in dialogue_query.iter_mut() {

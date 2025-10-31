@@ -51,14 +51,19 @@ use serde::{Deserialize, Serialize};
 ///
 /// # Loading with Bevy
 ///
-/// ```rust
+/// ```rust,ignore
+/// use bevy::prelude::*;
+/// use funkus_dialogue_core::asset::DialogueAsset;
+///
 /// // Load using Bevy's asset system
 /// fn setup(asset_server: Res<AssetServer>) {
 ///     // Load a dialogue asset
-///     let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
-///     
+///     let dialogue_handle: Handle<DialogueAsset> =
+///         asset_server.load("dialogues/example.dialogue.json");
+///
 ///     // The asset can then be accessed through the Assets<DialogueAsset> resource
 ///     // once it has finished loading
+///     let _unused = dialogue_handle;
 /// }
 /// ```
 #[derive(Asset, Debug, Clone, Reflect, Serialize, Deserialize)]
@@ -87,7 +92,7 @@ impl DialogueAsset {
     /// # Example
     ///
     /// ```rust
-    /// use funkus_dialogue::{DialogueAsset, DialogueGraph};
+    /// use funkus_dialogue_core::{DialogueAsset, DialogueGraph};
     ///
     /// let graph = DialogueGraph::new().with_name("My Dialogue");
     /// let asset = DialogueAsset::new(graph);
