@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::prelude::{Message, MessageReader};
-use funkus_dialogue_core::graph::DialogueGraph;
+use funkus_dialogue_core::graph::{DialogueGraph, DialogueNode};
+use std::path::{Path, PathBuf};
 
 /// In-memory representation of a dialogue asset that is currently open in the
 /// editor.
@@ -9,6 +10,7 @@ pub struct OpenDialogue {
     pub display_name: String,
     pub graph: DialogueGraph,
     pub dirty: bool,
+    pub source_path: Option<PathBuf>,
 }
 
 impl OpenDialogue {
@@ -18,8 +20,119 @@ impl OpenDialogue {
             display_name: display_name.into(),
             graph,
             dirty: false,
+            source_path: None,
         }
     }
+
+    #[must_use]
+    pub fn from_path(path: PathBuf) -> Self {
+        let display_name = display_name_for_path(&path);
+        let mut graph = DialogueGraph::new().with_name(display_name.clone());
+
+        let start = graph.add_node(DialogueNode::text(format!(
+            "This is a placeholder dialogue for {}.",
+            display_name
+        )));
+        let _ = graph.set_start_node(start);
+
+        Self {
+            display_name,
+            graph,
+            dirty: false,
+            source_path: Some(path),
+        }
+    }
+
+    pub fn set_source_path(&mut self, path: PathBuf) {
+        self.source_path = Some(path.clone());
+        self.display_name = display_name_for_path(&path);
+    }
+}
+
+fn display_name_for_path(path: &Path) -> String {
+    path.file_stem()
+        .and_then(|stem| stem.to_str())
+        .map(str::to_owned)
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| path.display().to_string())
+}
+
+#[derive(Resource, Debug)]
+pub struct EditorAssetBrowser {
+    pub available_assets: Vec<PathBuf>,
+    pub selected_index: Option<usize>,
+    pub path_input: String,
+}
+
+impl Default for EditorAssetBrowser {
+    fn default() -> Self {
+        let available_assets = default_stub_assets();
+        let selected_index = if available_assets.is_empty() {
+            None
+        } else {
+            Some(0)
+        };
+        let path_input = selected_index
+            .and_then(|index| available_assets.get(index))
+            .map(|path| path.display().to_string())
+            .unwrap_or_default();
+
+        Self {
+            available_assets,
+            selected_index,
+            path_input,
+        }
+    }
+}
+
+impl EditorAssetBrowser {
+    pub fn refresh_stub_assets(&mut self) {
+        if self.available_assets.is_empty() {
+            self.available_assets = default_stub_assets();
+            self.selected_index = if self.available_assets.is_empty() {
+                None
+            } else {
+                Some(0)
+            };
+            self.path_input = self
+                .selected_index
+                .and_then(|index| self.available_assets.get(index))
+                .map(|path| path.display().to_string())
+                .unwrap_or_default();
+        }
+    }
+
+    #[must_use]
+    pub fn selected_path(&self) -> Option<PathBuf> {
+        self.selected_index
+            .and_then(|index| self.available_assets.get(index))
+            .cloned()
+    }
+
+    pub fn select_path(&mut self, path: &Path) {
+        if let Some(existing) = self
+            .available_assets
+            .iter()
+            .position(|stored| stored == path)
+        {
+            self.selected_index = Some(existing);
+        } else {
+            self.available_assets.push(path.to_path_buf());
+            self.selected_index = Some(self.available_assets.len() - 1);
+        }
+        self.path_input = path.display().to_string();
+    }
+}
+
+fn default_stub_assets() -> Vec<PathBuf> {
+    [
+        "assets/dialogue/tutorial.dialogue.json",
+        "assets/dialogue/intro.dialogue.json",
+        "assets/dialogue/example.dialogue.json",
+    ]
+    .into_iter()
+    .map(PathBuf::from)
+    .collect()
 }
 
 /// Tracks the set of open dialogues along with the currently active document.
@@ -60,9 +173,7 @@ impl DialogueEditorWorkspace {
 
     /// Iterates over all open dialogues with their index.
     pub fn iter_dialogues(&self) -> impl Iterator<Item = (usize, &OpenDialogue)> {
-        self.open_dialogues
-            .iter()
-            .enumerate()
+        self.open_dialogues.iter().enumerate()
     }
 
     /// Adds a new, empty dialogue to the workspace and selects it.
@@ -119,11 +230,23 @@ impl DialogueEditorWorkspace {
 /// Commands that mutate the workspace, processed as a Bevy event stream.
 #[derive(Clone, Debug)]
 pub enum EditorCommand {
-    NewDialogue { preferred_name: Option<String> },
+    NewDialogue {
+        preferred_name: Option<String>,
+    },
     OpenDialogue(OpenDialogue),
-    CloseActive { force: bool },
-    SetActive { index: usize },
+    CloseActive {
+        force: bool,
+    },
+    SetActive {
+        index: usize,
+    },
     MarkActiveDirty,
+    LoadDialogueFromPath {
+        path: std::path::PathBuf,
+    },
+    SaveActiveDialogue {
+        destination: Option<std::path::PathBuf>,
+    },
 }
 
 impl Message for EditorCommand {}
@@ -149,6 +272,12 @@ pub fn apply_editor_commands(
             }
             EditorCommand::MarkActiveDirty => {
                 workspace.mark_active_dirty();
+            }
+            EditorCommand::LoadDialogueFromPath { .. } => {
+                // IO systems will handle this command.
+            }
+            EditorCommand::SaveActiveDialogue { .. } => {
+                // IO systems will handle this command.
             }
         }
     }

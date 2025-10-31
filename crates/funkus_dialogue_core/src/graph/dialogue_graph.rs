@@ -17,16 +17,16 @@
 //! ```
 
 use bevy::prelude::*;
+use petgraph::Direction;
 use petgraph::algo;
 use petgraph::stable_graph::{NodeIndex as StableNodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNodeReferences};
-use petgraph::Direction;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+use super::ConnectionData;
 use super::node::NodeId;
 use super::nodes::DialogueNode;
-use super::ConnectionData;
 
 /// Represents a complete dialogue graph with nodes, connections, and metadata.
 ///
@@ -534,9 +534,11 @@ mod tests {
         assert_eq!(graph.get_connected_nodes(start).len(), 1);
 
         assert!(graph.disconnect(start, branch_a).is_err());
-        assert!(graph
-            .connect(branch_b, NodeId::from_raw(999), ConnectionData::new(None))
-            .is_err());
+        assert!(
+            graph
+                .connect(branch_b, NodeId::from_raw(999), ConnectionData::new(None))
+                .is_err()
+        );
     }
 
     #[test]
