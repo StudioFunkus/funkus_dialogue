@@ -116,7 +116,7 @@ impl InspectorWidget {
                     ui.label("Next");
                     let connections = graph.get_connected_nodes(node_id);
                     if let Some((next, _)) = connections.first() {
-                        ui.label(format!("→ #{}", next.raw()));
+                        ui.label(format!("-> #{}", next.raw()));
                     } else {
                         ui.label("No outgoing connection.");
                     }
