@@ -1,7 +1,14 @@
 use bevy::prelude::*;
 use bevy::prelude::{Message, MessageReader};
-use funkus_dialogue_core::graph::{DialogueGraph, DialogueNode};
+use funkus_dialogue_core::graph::DialogueGraph;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
+
+use crate::node_editor::DialogueNodeEditorState;
+const DEFAULT_ASSETS_DIR: &str = "assets";
+const DIALOGUE_SUBDIR: &str = "dialogue";
+const SUPPORTED_DIALOGUE_EXTENSIONS: &[&str] = &["json", "ron"];
 
 /// In-memory representation of a dialogue asset that is currently open in the
 /// editor.
@@ -9,6 +16,7 @@ use std::path::{Path, PathBuf};
 pub struct OpenDialogue {
     pub display_name: String,
     pub graph: DialogueGraph,
+    pub node_editor: DialogueNodeEditorState,
     pub dirty: bool,
     pub source_path: Option<PathBuf>,
 }
@@ -16,28 +24,28 @@ pub struct OpenDialogue {
 impl OpenDialogue {
     #[must_use]
     pub fn new(display_name: impl Into<String>, graph: DialogueGraph) -> Self {
+        let node_editor = DialogueNodeEditorState::from_graph(&graph);
         Self {
             display_name: display_name.into(),
             graph,
+            node_editor,
             dirty: false,
             source_path: None,
         }
     }
 
     #[must_use]
-    pub fn from_path(path: PathBuf) -> Self {
-        let display_name = display_name_for_path(&path);
-        let mut graph = DialogueGraph::new().with_name(display_name.clone());
-
-        let start = graph.add_node(DialogueNode::text(format!(
-            "This is a placeholder dialogue for {}.",
-            display_name
-        )));
-        let _ = graph.set_start_node(start);
+    pub fn from_loaded_graph(path: PathBuf, graph: DialogueGraph) -> Self {
+        let display_name = graph
+            .name
+            .clone()
+            .unwrap_or_else(|| display_name_for_path(&path));
+        let node_editor = DialogueNodeEditorState::from_graph(&graph);
 
         Self {
             display_name,
             graph,
+            node_editor,
             dirty: false,
             source_path: Some(path),
         }
@@ -59,80 +67,273 @@ fn display_name_for_path(path: &Path) -> String {
 
 #[derive(Resource, Debug)]
 pub struct EditorAssetBrowser {
+    pub assets_root: PathBuf,
+    pub dialogue_root: PathBuf,
+    canonical_dialogue_root: PathBuf,
     pub available_assets: Vec<PathBuf>,
     pub selected_index: Option<usize>,
     pub path_input: String,
+    needs_refresh: bool,
 }
 
 impl Default for EditorAssetBrowser {
     fn default() -> Self {
-        let available_assets = default_stub_assets();
-        let selected_index = if available_assets.is_empty() {
-            None
-        } else {
-            Some(0)
-        };
-        let path_input = selected_index
-            .and_then(|index| available_assets.get(index))
-            .map(|path| path.display().to_string())
-            .unwrap_or_default();
+        let assets_root = default_assets_root();
+        let dialogue_root = assets_root.join(DIALOGUE_SUBDIR);
+        let canonical_dialogue_root =
+            fs::canonicalize(&dialogue_root).unwrap_or_else(|_| dialogue_root.clone());
 
-        Self {
-            available_assets,
-            selected_index,
-            path_input,
+        let mut browser = Self {
+            assets_root,
+            dialogue_root,
+            canonical_dialogue_root,
+            available_assets: Vec::new(),
+            selected_index: None,
+            path_input: String::new(),
+            needs_refresh: true,
+        };
+
+        if let Err(error) = browser.ensure_dialogue_directory() {
+            warn!(
+                "Failed to create dialogue assets directory {}: {error}",
+                browser.dialogue_root.display()
+            );
         }
+
+        browser.refresh_assets();
+
+        browser
     }
 }
 
 impl EditorAssetBrowser {
-    pub fn refresh_stub_assets(&mut self) {
-        if self.available_assets.is_empty() {
-            self.available_assets = default_stub_assets();
-            self.selected_index = if self.available_assets.is_empty() {
-                None
-            } else {
-                Some(0)
-            };
-            self.path_input = self
-                .selected_index
-                .and_then(|index| self.available_assets.get(index))
-                .map(|path| path.display().to_string())
-                .unwrap_or_default();
+    pub fn refresh_assets(&mut self) {
+        let previous_selection = self.selected_relative_path();
+
+        if let Err(error) = self.ensure_dialogue_directory() {
+            warn!(
+                "Failed to ensure dialogue directory {} exists: {error}",
+                self.dialogue_root.display()
+            );
         }
+
+        match collect_dialogue_assets(&self.dialogue_root) {
+            Ok(mut assets) => {
+                assets.sort();
+                self.available_assets = assets;
+            }
+            Err(error) => {
+                warn!(
+                    "Failed to scan dialogue assets under {}: {error}",
+                    self.dialogue_root.display()
+                );
+                self.available_assets.clear();
+            }
+        }
+
+        if let Some(previous) = previous_selection {
+            if let Some(index) = self
+                .available_assets
+                .iter()
+                .position(|candidate| candidate == &previous)
+            {
+                self.selected_index = Some(index);
+                self.path_input = self.available_assets[index].display().to_string();
+            } else {
+                self.selected_index = None;
+                self.path_input.clear();
+            }
+        } else if let Some(first) = self.available_assets.first() {
+            self.selected_index = Some(0);
+            self.path_input = first.display().to_string();
+        } else {
+            self.path_input.clear();
+        }
+
+        self.needs_refresh = false;
     }
 
     #[must_use]
     pub fn selected_path(&self) -> Option<PathBuf> {
         self.selected_index
             .and_then(|index| self.available_assets.get(index))
-            .cloned()
+            .map(|relative| self.dialogue_root.join(relative))
     }
 
     pub fn select_path(&mut self, path: &Path) {
-        if let Some(existing) = self
-            .available_assets
-            .iter()
-            .position(|stored| stored == path)
-        {
-            self.selected_index = Some(existing);
+        let absolute = self.to_absolute_dialogue_path(path);
+        if let Ok(relative) = absolute.strip_prefix(&self.dialogue_root) {
+            let relative = relative.to_path_buf();
+            if let Some(existing) = self
+                .available_assets
+                .iter()
+                .position(|stored| stored == &relative)
+            {
+                self.selected_index = Some(existing);
+            } else {
+                self.available_assets.push(relative.clone());
+                self.available_assets.sort();
+                self.selected_index = self
+                    .available_assets
+                    .iter()
+                    .position(|stored| stored == &relative);
+            }
+            if let Some(index) = self.selected_index {
+                self.path_input = self.available_assets[index].display().to_string();
+            } else {
+                self.path_input = relative.display().to_string();
+            }
         } else {
-            self.available_assets.push(path.to_path_buf());
-            self.selected_index = Some(self.available_assets.len() - 1);
+            // Path outside dialogue root; note it but do not track in the list.
+            self.selected_index = None;
+            self.path_input = absolute.display().to_string();
         }
-        self.path_input = path.display().to_string();
+    }
+
+    #[must_use]
+    pub fn selected_relative_path(&self) -> Option<PathBuf> {
+        self.selected_index
+            .and_then(|index| self.available_assets.get(index))
+            .cloned()
+    }
+
+    #[must_use]
+    pub fn dialogue_root_display(&self) -> String {
+        self.dialogue_root.display().to_string()
+    }
+
+    #[must_use]
+    pub fn path_input(&self) -> &str {
+        &self.path_input
+    }
+
+    pub fn mark_needs_refresh(&mut self) {
+        self.needs_refresh = true;
+    }
+
+    pub fn refresh_if_needed(&mut self) {
+        if self.needs_refresh {
+            self.refresh_assets();
+        }
+    }
+
+    #[must_use]
+    pub fn is_within_dialogue_root(&self, path: &Path) -> bool {
+        let absolute = self.to_absolute_dialogue_path(path);
+        let candidate = fs::canonicalize(&absolute).unwrap_or(absolute.clone());
+        candidate.starts_with(&self.canonical_dialogue_root)
+    }
+
+    pub fn import_into_dialogue_root(&mut self, external_path: &Path) -> io::Result<PathBuf> {
+        self.ensure_dialogue_directory()?;
+
+        let file_name = external_path.file_name().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Selected path {} does not have a valid file name.",
+                    external_path.display()
+                ),
+            )
+        })?;
+
+        let mut destination = self.dialogue_root.join(file_name);
+        if destination.exists() {
+            let source = Path::new(file_name);
+            let stem = source
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("imported");
+            let extension = source.extension().and_then(|ext| ext.to_str());
+
+            let mut counter = 1;
+            loop {
+                let candidate = if let Some(ext) = extension {
+                    format!("{stem}-{counter}.{ext}")
+                } else {
+                    format!("{stem}-{counter}")
+                };
+                destination = self.dialogue_root.join(candidate);
+                if !destination.exists() {
+                    break;
+                }
+                counter += 1;
+            }
+        }
+
+        fs::copy(external_path, &destination)?;
+        self.mark_needs_refresh();
+        Ok(destination)
+    }
+
+    #[must_use]
+    pub fn relative_path_if_within(&self, path: &Path) -> PathBuf {
+        let absolute = self.to_absolute_dialogue_path(path);
+        absolute
+            .strip_prefix(&self.dialogue_root)
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| path.to_path_buf())
+    }
+
+    #[must_use]
+    pub fn to_absolute_dialogue_path(&self, path: &Path) -> PathBuf {
+        if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.dialogue_root.join(path)
+        }
+    }
+
+    fn ensure_dialogue_directory(&mut self) -> io::Result<()> {
+        fs::create_dir_all(&self.dialogue_root)?;
+        if let Ok(canonical) = fs::canonicalize(&self.dialogue_root) {
+            self.canonical_dialogue_root = canonical;
+        }
+        Ok(())
     }
 }
 
-fn default_stub_assets() -> Vec<PathBuf> {
-    [
-        "assets/dialogue/tutorial.dialogue.json",
-        "assets/dialogue/intro.dialogue.json",
-        "assets/dialogue/example.dialogue.json",
-    ]
-    .into_iter()
-    .map(PathBuf::from)
-    .collect()
+fn collect_dialogue_assets(root: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                stack.push(path);
+            } else if file_type.is_file() && is_dialogue_file(&path) {
+                if let Ok(relative) = path.strip_prefix(root) {
+                    files.push(relative.to_path_buf());
+                } else {
+                    files.push(path);
+                }
+            }
+        }
+    }
+
+    files.sort();
+    Ok(files)
+}
+
+fn is_dialogue_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            let lower = ext.to_ascii_lowercase();
+            SUPPORTED_DIALOGUE_EXTENSIONS
+                .iter()
+                .any(|candidate| candidate == &lower)
+        })
+        .unwrap_or(false)
+}
+
+fn default_assets_root() -> PathBuf {
+    std::env::current_dir()
+        .map(|cwd| cwd.join(DEFAULT_ASSETS_DIR))
+        .unwrap_or_else(|_| PathBuf::from(DEFAULT_ASSETS_DIR))
 }
 
 /// Tracks the set of open dialogues along with the currently active document.
@@ -280,5 +481,71 @@ pub fn apply_editor_commands(
                 // IO systems will handle this command.
             }
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusLevel {
+    Info,
+    Success,
+    Warning,
+    Error,
+}
+
+#[derive(Debug, Clone)]
+pub struct StatusMessage {
+    pub level: StatusLevel,
+    pub text: String,
+}
+
+impl StatusMessage {
+    #[must_use]
+    pub fn new(level: StatusLevel, text: impl Into<String>) -> Self {
+        Self {
+            level,
+            text: text.into(),
+        }
+    }
+}
+
+#[derive(Resource, Debug, Default)]
+pub struct EditorStatusMessages {
+    pub messages: Vec<StatusMessage>,
+}
+
+impl EditorStatusMessages {
+    pub fn push(&mut self, level: StatusLevel, text: impl Into<String>) {
+        self.messages.push(StatusMessage::new(level, text));
+        const MAX_MESSAGES: usize = 20;
+        if self.messages.len() > MAX_MESSAGES {
+            let excess = self.messages.len() - MAX_MESSAGES;
+            self.messages.drain(0..excess);
+        }
+    }
+
+    pub fn info(&mut self, text: impl Into<String>) {
+        self.push(StatusLevel::Info, text);
+    }
+
+    pub fn success(&mut self, text: impl Into<String>) {
+        self.push(StatusLevel::Success, text);
+    }
+
+    pub fn warning(&mut self, text: impl Into<String>) {
+        self.push(StatusLevel::Warning, text);
+    }
+
+    pub fn error(&mut self, text: impl Into<String>) {
+        self.push(StatusLevel::Error, text);
+    }
+
+    pub fn remove(&mut self, index: usize) {
+        if index < self.messages.len() {
+            self.messages.remove(index);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.messages.clear();
     }
 }
