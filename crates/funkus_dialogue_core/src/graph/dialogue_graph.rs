@@ -438,6 +438,28 @@ impl DialogueGraph {
         }
     }
 
+    /// Updates the label for a connection between two nodes.
+    ///
+    /// Returns an error if no connection exists.
+    pub fn update_connection_label(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        label: Option<String>,
+    ) -> Result<(), String> {
+        let from_idx = self.require_index(from)?;
+        let to_idx = self.require_index(to)?;
+
+        if let Some(edge_id) = self.graph.find_edge(from_idx, to_idx) {
+            if let Some(data) = self.graph.edge_weight_mut(edge_id) {
+                data.label = label;
+                return Ok(());
+            }
+        }
+
+        Err(format!("No connection from {:?} to {:?}", from, to))
+    }
+
     /// Retrieves all connections leaving a node, including their edge data.
     ///
     /// The returned vector borrows [`ConnectionData`] weights; callers that need owned labels
