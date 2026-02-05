@@ -122,9 +122,10 @@ impl Serialize for DialogueGraph {
             if let Some((from_idx, to_idx)) = self.graph.edge_endpoints(edge) {
                 let from = NodeId::from_index(from_idx);
                 let to = NodeId::from_index(to_idx);
-                let (label, order) = self.graph.edge_weight(edge).map_or((None, None), |data| {
-                    (data.label.clone(), data.order)
-                });
+                let (label, order) = self
+                    .graph
+                    .edge_weight(edge)
+                    .map_or((None, None), |data| (data.label.clone(), data.order));
                 connections.push(SerialConnection {
                     from,
                     to,

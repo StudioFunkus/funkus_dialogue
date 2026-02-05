@@ -1,3 +1,5 @@
+//! Transient UI state for editor panels (filters, tab selection, etc.).
+
 use bevy::prelude::Resource;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

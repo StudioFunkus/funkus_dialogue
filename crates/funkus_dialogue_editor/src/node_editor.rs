@@ -1,3 +1,8 @@
+//! Node canvas rendering backed by egui-snarl.
+//!
+//! The snarl widget owns interaction state (selection, drag, wire edits). We mirror
+//! its selection into `DialogueNodeEditorState` so the inspector can reflect it.
+
 use std::collections::{HashMap, HashSet};
 
 use bevy_egui::egui::{self, Color32, Pos2, RichText, Stroke, Ui, Vec2, pos2, vec2};
@@ -220,7 +225,6 @@ pub fn draw_dialogue_node_editor(
 
     let mut selected = Vec::new();
     let mut dirty = false;
-    let selected_snapshot = state.selected_nodes.clone();
     let (viewer_dirty, response_clicked) = {
         let (snarl, graph_to_snarl, spawn_index) = state.split_mut();
 
@@ -246,8 +250,7 @@ pub fn draw_dialogue_node_editor(
             dirty = true;
         }
 
-        let mut viewer =
-            DialogueSnarlViewer::new(graph, graph_to_snarl, spawn_index, selected_snapshot);
+        let mut viewer = DialogueSnarlViewer::new(graph, graph_to_snarl, spawn_index);
         let available = ui.available_size();
         let snarl_widget = SnarlWidget::new()
             .id_salt("dialogue_snarl")
@@ -268,6 +271,7 @@ pub fn draw_dialogue_node_editor(
         (viewer_dirty, response_clicked)
     };
 
+    // Selection comes from egui-snarl; we copy it into editor state for the inspector.
     if !selected.is_empty() {
         state.selected_nodes = selected;
     } else if response_clicked && !preserve_selection {
@@ -298,7 +302,6 @@ struct DialogueSnarlViewer<'a> {
     graph: &'a mut DialogueGraph,
     graph_to_snarl: &'a mut HashMap<NodeId, SnarlNodeId>,
     spawn_index: &'a mut usize,
-    selected_snapshot: Vec<NodeId>,
     dirty: bool,
 }
 
@@ -307,13 +310,11 @@ impl<'a> DialogueSnarlViewer<'a> {
         graph: &'a mut DialogueGraph,
         graph_to_snarl: &'a mut HashMap<NodeId, SnarlNodeId>,
         spawn_index: &'a mut usize,
-        selected_snapshot: Vec<NodeId>,
     ) -> Self {
         Self {
             graph,
             graph_to_snarl,
             spawn_index,
-            selected_snapshot,
             dirty: false,
         }
     }
@@ -430,9 +431,6 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
         snarl: &Snarl<DialogueNodeView>,
     ) -> egui::Frame {
         if let Some(graph_id) = self.graph_id_for_node(node, snarl) {
-            if self.selected_snapshot.contains(&graph_id) {
-                default.stroke = Stroke::new(1.5, Color32::from_rgb(0x6A, 0xB7, 0xFF));
-            }
             if self.graph.start_node == Some(graph_id) {
                 default.fill = START_NODE_COLOR;
                 default.stroke = Stroke::new(1.5, Color32::from_rgb(0x6B, 0xC5, 0x7A));
@@ -451,12 +449,7 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
     ) {
         if let Some(graph_id) = self.graph_id_for_node(node, snarl) {
             ui.horizontal(|ui| {
-                let is_selected = self.selected_snapshot.contains(&graph_id);
-                let mut title = RichText::new(self.title(&snarl[node]));
-                if is_selected {
-                    title = title.strong();
-                }
-                ui.label(title);
+                ui.label(self.title(&snarl[node]));
                 if self.graph.start_node == Some(graph_id) {
                     ui.label(RichText::new("Start").color(Color32::LIGHT_GREEN));
                 } else if ui.small_button("Set Start").clicked() {
