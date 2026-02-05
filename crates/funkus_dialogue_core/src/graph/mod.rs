@@ -15,7 +15,7 @@
 //!
 //! - [`DialogueGraph`]: The main graph structure containing nodes and connections
 //! - [`NodeId`]: Unique identifier for nodes in a graph
-//! - [`Connection`]: Connection between nodes, potentially with a label
+//! - [`ConnectionData`]: Edge data between nodes, including optional labels
 //! - [`DialogueNode`]: Enum of different node implementations
 //!
 //! ## Graph Structure
@@ -26,6 +26,14 @@
 //! - Connections between nodes define the possible paths through the dialogue
 //! - The graph has a designated start node where dialogues begin
 //! - Nodes without outgoing connections represent dialogue endpoints
+//! - Text nodes are expected to have 0 or 1 outgoing connection at runtime
+//!
+//! ## Ordering
+//!
+//! Connections carry an explicit `order` field (stored in [`ConnectionData`]).
+//! When a connection is created without an order, the graph assigns the next
+//! available value. Use this to render or process choices deterministically,
+//! and update it in editor tooling when reordering choices.
 //!
 //! ## Node Types
 //!

@@ -58,6 +58,10 @@ impl NodeId {
 
 /// Connection from one node to another.
 ///
+/// This is a convenience struct for tooling and serialization use-cases.
+/// The core graph stores edge data using [`ConnectionData`], so most runtime
+/// code should work with `ConnectionData` rather than this struct.
+///
 /// A Connection represents a directed edge in the dialogue graph,
 /// potentially with a label. For choice nodes, the label typically
 /// represents the text of the choice option.
@@ -97,12 +101,25 @@ pub struct Connection {
 pub struct ConnectionData {
     /// Optional label for this connection (used as choice text for choice nodes)
     pub label: Option<String>,
+    /// Optional explicit ordering for this connection among siblings.
+    ///
+    /// Lower values are shown/processed first. This is assigned automatically
+    /// when a connection is created unless explicitly set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub order: Option<u32>,
 }
 
 impl ConnectionData {
     /// Creates a new connection with an optional label
     pub fn new(label: Option<String>) -> Self {
-        Self { label }
+        Self { label, order: None }
+    }
+
+    /// Assigns an explicit ordering value to the connection.
+    #[must_use]
+    pub fn with_order(mut self, order: u32) -> Self {
+        self.order = Some(order);
+        self
     }
 }
 

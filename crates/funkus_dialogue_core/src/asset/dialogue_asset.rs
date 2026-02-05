@@ -20,7 +20,8 @@ use serde::{Deserialize, Serialize};
 /// # Serialization
 ///
 /// This type supports serialization and deserialization through serde, allowing
-/// dialogues to be defined in JSON files.
+/// dialogues to be defined in JSON or RON files. The core plugin registers JSON
+/// assets by default; register the RON asset plugin if you want to load `.ron`.
 ///
 /// # Example JSON Format
 ///

@@ -10,12 +10,12 @@
 //!
 //! ## Core Features
 //!
-//! - **Asset System**: Define dialogues in JSON format with a flexible node-based structure
+//! - **Asset System**: Define dialogues in JSON or RON format with a flexible node-based structure
 //! - **Runtime Engine**: Process dialogues during gameplay, handling player choices and state transitions
 //! - **Node Types**: Support for text, choice, and other specialized node types
-//! - **Event System**: *Coming soon* - Type-safe events for integrating dialogues with game systems
+//! - **Event System**: Message-based events for integrating dialogues with game systems
 //! - **Debug Tools**: Built-in debugging utilities for dialogue development
-//! - **Editor**: *Coming soon* - A visual editor for creating and editing dialogues
+//! - **Editor**: Visual editor available via the `funkus_dialogue_editor` crate
 //!
 //! ## Basic Usage
 //!
@@ -57,7 +57,7 @@
 //!
 //! The system follows a layered architecture:
 //!
-//! 1. **Asset Layer**: Defines dialogue data structures and handles loading from JSON files
+//! 1. **Asset Layer**: Defines dialogue data structures and handles loading from JSON/RON files
 //!    into Bevy's asset system. Handles serialization and deserialization of dialogue data.
 //! 2. **Graph Layer**: Provides the core graph representation of dialogues, including nodes and connections.
 //!    Uses petgraph internally for efficient graph operations while exposing a dialogue-specific API.

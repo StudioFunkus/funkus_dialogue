@@ -114,6 +114,46 @@ impl DialogueNodeEditorState {
             .retain(|id| self.graph_to_snarl.contains_key(id));
     }
 
+    pub fn refresh_connections_for_node(&mut self, graph: &DialogueGraph, node_id: NodeId) {
+        let Some(&snarl_id) = self.graph_to_snarl.get(&node_id) else {
+            return;
+        };
+        let Some(node) = graph.get_node(node_id) else {
+            return;
+        };
+
+        let connections = graph.get_connected_nodes(node_id);
+        let output_count = match node {
+            DialogueNode::Text { .. } => 1,
+            DialogueNode::Choice { .. } => {
+                let count = connections.len();
+                if count == 0 { 1 } else { count + 1 }
+            }
+        };
+
+        for output in 0..output_count {
+            let out_pin = OutPinId {
+                node: snarl_id,
+                output,
+            };
+            self.snarl.drop_outputs(out_pin);
+        }
+
+        for (output_index, (target, _)) in connections.iter().enumerate() {
+            if let Some(&to_snarl) = self.graph_to_snarl.get(target) {
+                let out_pin = OutPinId {
+                    node: snarl_id,
+                    output: output_index,
+                };
+                let in_pin = InPinId {
+                    node: to_snarl,
+                    input: 0,
+                };
+                self.snarl.connect(out_pin, in_pin);
+            }
+        }
+    }
+
     pub fn request_selection(&mut self, id: NodeId) {
         self.pending_selection = Some(id);
     }
@@ -181,7 +221,7 @@ pub fn draw_dialogue_node_editor(
     let mut selected = Vec::new();
     let mut dirty = false;
     let selected_snapshot = state.selected_nodes.clone();
-    let (viewer_dirty, response_clicked, clicked_node) = {
+    let (viewer_dirty, response_clicked) = {
         let (snarl, graph_to_snarl, spawn_index) = state.split_mut();
 
         if add_text_node {
@@ -225,14 +265,11 @@ pub fn draw_dialogue_node_editor(
                 selected.push(view.graph_id);
             }
         }
-        let clicked_node = viewer.clicked_node;
-        (viewer_dirty, response_clicked, clicked_node)
+        (viewer_dirty, response_clicked)
     };
 
     if !selected.is_empty() {
         state.selected_nodes = selected;
-    } else if let Some(node_id) = clicked_node {
-        state.selected_nodes = vec![node_id];
     } else if response_clicked && !preserve_selection {
         state.selected_nodes.clear();
     }
@@ -262,7 +299,6 @@ struct DialogueSnarlViewer<'a> {
     graph_to_snarl: &'a mut HashMap<NodeId, SnarlNodeId>,
     spawn_index: &'a mut usize,
     selected_snapshot: Vec<NodeId>,
-    clicked_node: Option<NodeId>,
     dirty: bool,
 }
 
@@ -278,7 +314,6 @@ impl<'a> DialogueSnarlViewer<'a> {
             graph_to_snarl,
             spawn_index,
             selected_snapshot,
-            clicked_node: None,
             dirty: false,
         }
     }
@@ -417,12 +452,11 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
         if let Some(graph_id) = self.graph_id_for_node(node, snarl) {
             ui.horizontal(|ui| {
                 let is_selected = self.selected_snapshot.contains(&graph_id);
-                if ui
-                    .selectable_label(is_selected, self.title(&snarl[node]))
-                    .clicked()
-                {
-                    self.clicked_node = Some(graph_id);
+                let mut title = RichText::new(self.title(&snarl[node]));
+                if is_selected {
+                    title = title.strong();
                 }
+                ui.label(title);
                 if self.graph.start_node == Some(graph_id) {
                     ui.label(RichText::new("Start").color(Color32::LIGHT_GREEN));
                 } else if ui.small_button("Set Start").clicked() {
@@ -716,12 +750,19 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
         snarl.drop_inputs(pin.id);
         self.dirty = true;
     }
+
+    fn final_node_rect(
+        &mut self,
+        _node: SnarlNodeId,
+        _rect: egui::Rect,
+        _ui: &mut Ui,
+        _snarl: &mut Snarl<DialogueNodeView>,
+    ) {
+    }
 }
 
 fn sorted_connections(graph: &DialogueGraph, id: NodeId) -> Vec<(NodeId, Option<String>)> {
-    let mut connections = graph.get_connected_nodes(id);
-    connections.sort_by(|a, b| a.0.raw().cmp(&b.0.raw()).then_with(|| a.1.cmp(&b.1)));
-    connections
+    graph.get_connected_nodes(id)
 }
 
 fn connection_target_for_output(

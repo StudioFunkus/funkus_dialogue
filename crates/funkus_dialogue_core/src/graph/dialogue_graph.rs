@@ -76,6 +76,8 @@ impl Serialize for DialogueGraph {
             from: NodeId,
             to: NodeId,
             label: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            order: Option<u32>,
         }
 
         #[derive(Serialize)]
@@ -120,11 +122,15 @@ impl Serialize for DialogueGraph {
             if let Some((from_idx, to_idx)) = self.graph.edge_endpoints(edge) {
                 let from = NodeId::from_index(from_idx);
                 let to = NodeId::from_index(to_idx);
-                let label = self
-                    .graph
-                    .edge_weight(edge)
-                    .and_then(|data| data.label.clone());
-                connections.push(SerialConnection { from, to, label });
+                let (label, order) = self.graph.edge_weight(edge).map_or((None, None), |data| {
+                    (data.label.clone(), data.order)
+                });
+                connections.push(SerialConnection {
+                    from,
+                    to,
+                    label,
+                    order,
+                });
             }
         }
 
@@ -167,6 +173,8 @@ impl<'de> Deserialize<'de> for DialogueGraph {
             from: NodeId,
             to: NodeId,
             label: Option<String>,
+            #[serde(default)]
+            order: Option<u32>,
         }
 
         #[derive(Deserialize)]
@@ -218,7 +226,13 @@ impl<'de> Deserialize<'de> for DialogueGraph {
 
         for conn in data.connections {
             if let (Some(&from), Some(&to)) = (id_map.get(&conn.from), id_map.get(&conn.to)) {
-                let _ = graph.connect(from, to, ConnectionData::new(conn.label.clone()));
+                let data = ConnectionData::new(conn.label.clone());
+                let data = if let Some(order) = conn.order {
+                    data.with_order(order)
+                } else {
+                    data
+                };
+                let _ = graph.connect(from, to, data);
             }
         }
 
@@ -339,11 +353,21 @@ impl DialogueGraph {
         Ok(())
     }
 
-    /// Returns all outward connections from the supplied node.
+    /// Returns all outward connections from the supplied node in stable order.
     ///
     /// The labels in the tuple are cloned from the underlying [`ConnectionData`] for convenience.
+    /// Connections are sorted by their explicit `order` field (ascending), falling back to node id
+    /// for ties. If you need a different ordering, sort the results yourself.
     pub fn get_connected_nodes(&self, id: NodeId) -> Vec<(NodeId, Option<String>)> {
-        self.get_connections(id)
+        let mut connections = self.get_connections(id);
+        connections.sort_by(|(a_id, a_data), (b_id, b_data)| {
+            let a_order = a_data.order.unwrap_or(u32::MAX);
+            let b_order = b_data.order.unwrap_or(u32::MAX);
+            a_order
+                .cmp(&b_order)
+                .then_with(|| a_id.raw().cmp(&b_id.raw()))
+        });
+        connections
             .into_iter()
             .map(|(target, data)| (target, data.label.clone()))
             .collect()
@@ -414,6 +438,10 @@ impl DialogueGraph {
     ) -> Result<(), String> {
         let from_idx = self.require_index(from)?;
         let to_idx = self.require_index(to)?;
+        let mut data = data;
+        if data.order.is_none() {
+            data.order = Some(self.next_connection_order(from_idx));
+        }
         self.graph.add_edge(from_idx, to_idx, data);
         Ok(())
     }
@@ -460,6 +488,65 @@ impl DialogueGraph {
         Err(format!("No connection from {:?} to {:?}", from, to))
     }
 
+    /// Reorders outgoing connections for a node using the provided target ordering.
+    ///
+    /// Every outgoing connection from `from` must be represented exactly once in
+    /// `ordered_targets`. The supplied order is stored in each connection's
+    /// [`ConnectionData::order`] field.
+    pub fn reorder_connections(
+        &mut self,
+        from: NodeId,
+        ordered_targets: &[NodeId],
+    ) -> Result<(), String> {
+        let from_idx = self.require_index(from)?;
+        let existing: Vec<NodeId> = self
+            .graph
+            .edges_directed(from_idx, Direction::Outgoing)
+            .filter_map(|edge| self.graph.node_weight(edge.target()).map(|_| edge.target()))
+            .map(NodeId::from_index)
+            .collect();
+
+        if existing.len() != ordered_targets.len() {
+            return Err(format!(
+                "Expected {} outgoing connections for {:?}, got {}",
+                existing.len(),
+                from,
+                ordered_targets.len()
+            ));
+        }
+
+        let mut seen = std::collections::HashSet::new();
+        for target in ordered_targets {
+            if !seen.insert(*target) {
+                return Err(format!(
+                    "Duplicate target {:?} provided when reordering connections",
+                    target
+                ));
+            }
+        }
+
+        for target in &existing {
+            if !seen.contains(target) {
+                return Err(format!(
+                    "Missing target {:?} when reordering connections for {:?}",
+                    target, from
+                ));
+            }
+        }
+
+        for (index, target) in ordered_targets.iter().enumerate() {
+            let to_idx = self.require_index(*target)?;
+            let Some(edge_id) = self.graph.find_edge(from_idx, to_idx) else {
+                return Err(format!("No connection from {:?} to {:?}", from, target));
+            };
+            if let Some(data) = self.graph.edge_weight_mut(edge_id) {
+                data.order = Some(index as u32);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Retrieves all connections leaving a node, including their edge data.
     ///
     /// The returned vector borrows [`ConnectionData`] weights; callers that need owned labels
@@ -475,6 +562,19 @@ impl DialogueGraph {
             }
         }
         results
+    }
+
+    fn next_connection_order(&self, from: StableNodeIndex) -> u32 {
+        let mut max_order: Option<u32> = None;
+        for edge in self.graph.edges_directed(from, Direction::Outgoing) {
+            if let Some(order) = edge.weight().order {
+                max_order = Some(match max_order {
+                    Some(current) => current.max(order),
+                    None => order,
+                });
+            }
+        }
+        max_order.map_or(0, |value| value.saturating_add(1))
     }
 }
 
@@ -569,6 +669,43 @@ mod tests {
         assert_eq!(graph.start_node, Some(start));
         graph.remove_node(start).unwrap();
         assert!(graph.start_node.is_none());
+    }
+
+    #[test]
+    fn connection_ordering_is_stable_and_reorderable() {
+        let mut graph = DialogueGraph::new();
+        let start = graph.add_node(DialogueNode::text("Start"));
+        let branch_a = graph.add_node(DialogueNode::text("A"));
+        let branch_b = graph.add_node(DialogueNode::text("B"));
+        let branch_c = graph.add_node(DialogueNode::text("C"));
+
+        graph
+            .connect(start, branch_b, ConnectionData::new(Some("B".into())))
+            .unwrap();
+        graph
+            .connect(start, branch_a, ConnectionData::new(Some("A".into())))
+            .unwrap();
+        graph
+            .connect(start, branch_c, ConnectionData::new(Some("C".into())))
+            .unwrap();
+
+        let order: Vec<_> = graph
+            .get_connected_nodes(start)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(order, vec![branch_b, branch_a, branch_c]);
+
+        graph
+            .reorder_connections(start, &[branch_a, branch_b, branch_c])
+            .unwrap();
+
+        let reordered: Vec<_> = graph
+            .get_connected_nodes(start)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        assert_eq!(reordered, vec![branch_a, branch_b, branch_c]);
     }
 
     #[test]

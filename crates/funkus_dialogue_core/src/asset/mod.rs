@@ -7,7 +7,7 @@
 //! The asset system is responsible for:
 //!
 //! - Defining the `DialogueAsset` type that represents dialogue data
-//! - Loading dialogue data from JSON files
+//! - Loading dialogue data from JSON or RON files
 //! - Providing access to dialogue data for the runtime system
 //!
 //! ## Key Components
@@ -16,7 +16,10 @@
 //!
 //! ## Usage
 //!
-//! Dialogue assets are typically loaded through Bevy's asset system:
+//! Dialogue assets are typically loaded through Bevy's asset system. The core plugin
+//! registers JSON assets for the `.dialogue.json` extension by default. If you want
+//! to load `.dialogue.ron`, register the `bevy_common_assets::ron::RonAssetPlugin`
+//! in your app.
 //!
 //! ```rust,ignore
 //! use bevy::prelude::*;

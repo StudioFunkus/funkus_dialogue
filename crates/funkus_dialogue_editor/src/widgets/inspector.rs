@@ -141,17 +141,31 @@ impl InspectorWidget {
                     ui.separator();
                     ui.label("Choices");
 
-                    let mut connections = graph.get_connected_nodes(node_id);
+                    let connections = graph.get_connected_nodes(node_id);
                     if connections.is_empty() {
                         ui.label("No outgoing connections.");
                     } else {
-                        connections.sort_by(|a, b| a.0.raw().cmp(&b.0.raw()));
+                        let mut reorder_request: Option<(usize, usize)> = None;
                         for (index, (target, label)) in connections.iter().enumerate() {
                             let mut current = label
                                 .clone()
                                 .unwrap_or_else(|| format!("Choice {}", index + 1));
                             ui.horizontal(|ui| {
-                                ui.label(format!("→ #{}", target.raw()));
+                                let is_first = index == 0;
+                                let is_last = index + 1 == connections.len();
+                                if ui
+                                    .add_enabled(!is_first, egui::Button::new("^"))
+                                    .clicked()
+                                {
+                                    reorder_request = Some((index, index.saturating_sub(1)));
+                                }
+                                if ui
+                                    .add_enabled(!is_last, egui::Button::new("v"))
+                                    .clicked()
+                                {
+                                    reorder_request = Some((index, index + 1));
+                                }
+                                ui.label(format!("-> #{}", target.raw()));
                                 if ui.text_edit_singleline(&mut current).changed() {
                                     let trimmed = current.trim();
                                     let updated = if trimmed.is_empty() {
@@ -164,6 +178,23 @@ impl InspectorWidget {
                                     dirty = true;
                                 }
                             });
+                        }
+                        if let Some((from, to)) = reorder_request {
+                            let mut ordered_targets: Vec<_> =
+                                connections.iter().map(|(target, _)| *target).collect();
+                            ordered_targets.swap(from, to);
+                            match graph.reorder_connections(node_id, &ordered_targets) {
+                                Ok(()) => {
+                                    node_state.refresh_connections_for_node(graph, node_id);
+                                    dirty = true;
+                                }
+                                Err(error) => {
+                                    status.error(format!(
+                                        "Failed to reorder choices for node #{}: {error}",
+                                        node_id.raw()
+                                    ));
+                                }
+                            }
                         }
                     }
                 }

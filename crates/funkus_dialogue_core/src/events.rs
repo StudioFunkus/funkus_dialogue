@@ -83,7 +83,7 @@ use crate::graph::NodeId;
 /// use bevy::prelude::*;
 /// use funkus_dialogue_core::DialogueStarted;
 ///
-/// fn on_dialogue_start(mut dialogue_events: EventReader<DialogueStarted>) {
+/// fn on_dialogue_start(mut dialogue_events: MessageReader<DialogueStarted>) {
 ///     for event in dialogue_events.read() {
 ///         println!("Dialogue started with entity {:?}", event.entity);
 ///         // Play dialogue start sound, change camera, etc.
