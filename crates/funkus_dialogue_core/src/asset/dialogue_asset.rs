@@ -60,7 +60,7 @@ use serde::{Deserialize, Serialize};
 /// fn setup(asset_server: Res<AssetServer>) {
 ///     // Load a dialogue asset
 ///     let dialogue_handle: Handle<DialogueAsset> =
-///         asset_server.load("dialogues/example.dialogue.json");
+///         asset_server.load("dialogue/example.dialogue.json");
 ///
 ///     // The asset can then be accessed through the Assets<DialogueAsset> resource
 ///     // once it has finished loading

@@ -9,7 +9,8 @@ mod widgets;
 use bevy::prelude::*;
 use bevy::prelude::{MessageReader, MessageWriter};
 use bevy_egui::{
-    EguiContextSettings, EguiContexts, EguiPlugin, EguiPreUpdateSet, EguiPrimaryContextPass, egui,
+    EguiContext, EguiContextSettings, EguiPlugin, EguiPreUpdateSet, EguiPrimaryContextPass,
+    EguiUserTextures, PrimaryEguiContext, egui,
 };
 use funkus_dialogue_core::DialogueAsset;
 use funkus_dialogue_core::graph::DialogueGraph;
@@ -19,8 +20,8 @@ use std::path::{Path, PathBuf};
 use thiserror::Error;
 
 pub use state::{
-    DialogueEditorWorkspace, EditorAssetBrowser, EditorCommand, EditorStatusMessages, OpenDialogue,
-    StatusLevel, StatusMessage, apply_editor_commands,
+    DialogueEditorWorkspace, EditorAssetBrowser, EditorCommand, EditorPortraitBrowser,
+    EditorStatusMessages, OpenDialogue, StatusLevel, StatusMessage, apply_editor_commands,
 };
 use ui_state::EditorUiState;
 use widgets::{InspectorWidget, LeftPanelWidget, NodeCanvasWidget, StatusBarWidget, ToolbarWidget};
@@ -174,13 +175,35 @@ fn save_dialogue_to_disk(graph: &DialogueGraph, path: &Path) -> Result<(), Dialo
 }
 
 /// Plugin that wires the dialogue editor into an existing Bevy app.
-#[derive(Default)]
-pub struct DialogueEditorPlugin;
+///
+/// The editor assumes the same asset root as your `AssetPlugin::file_path`
+/// (default: `assets` relative to the working directory). Use
+/// [`DialogueEditorPlugin::with_assets_root`] if your asset root differs.
+#[derive(Default, Clone)]
+pub struct DialogueEditorPlugin {
+    /// Optional override for the assets root directory used by the editor.
+    pub assets_root: Option<PathBuf>,
+}
+
+impl DialogueEditorPlugin {
+    #[must_use]
+    pub fn with_assets_root(root: impl Into<PathBuf>) -> Self {
+        Self {
+            assets_root: Some(root.into()),
+        }
+    }
+}
 
 impl Plugin for DialogueEditorPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<DialogueEditorWorkspace>();
-        app.init_resource::<EditorAssetBrowser>();
+        if let Some(root) = self.assets_root.clone() {
+            app.insert_resource(EditorAssetBrowser::with_assets_root(root.clone()));
+            app.insert_resource(EditorPortraitBrowser::with_assets_root(root));
+        } else {
+            app.init_resource::<EditorAssetBrowser>();
+            app.init_resource::<EditorPortraitBrowser>();
+        }
         app.init_resource::<EditorStatusMessages>();
         app.init_resource::<EditorUiState>();
         app.add_message::<EditorCommand>();
@@ -214,15 +237,21 @@ fn snap_egui_scale_factor(mut contexts: Query<(&mut EguiContextSettings, &Camera
 }
 
 fn draw_editor_ui(
-    mut contexts: EguiContexts,
+    mut contexts: Query<(&mut EguiContext, Option<&PrimaryEguiContext>)>,
     mut workspace: ResMut<DialogueEditorWorkspace>,
     mut asset_browser: ResMut<EditorAssetBrowser>,
+    mut portrait_browser: ResMut<EditorPortraitBrowser>,
     mut status: ResMut<EditorStatusMessages>,
     mut ui_state: ResMut<EditorUiState>,
     mut command_writer: MessageWriter<EditorCommand>,
+    asset_server: Res<AssetServer>,
+    mut egui_textures: ResMut<EguiUserTextures>,
+    images: Res<Assets<Image>>,
 ) {
-    if let Ok(ctx) = contexts.ctx_mut() {
+    if let Some((mut ctx, _)) = contexts.iter_mut().find(|(_, primary)| primary.is_some()) {
+        let ctx = ctx.get_mut();
         asset_browser.refresh_if_needed();
+        portrait_browser.refresh_if_needed();
 
         let mut toolbar = ToolbarWidget;
         let mut left_panel = LeftPanelWidget;
@@ -265,8 +294,16 @@ fn draw_editor_ui(
             .min_width(280.0)
             .show(ctx, |ui| {
                 if let Some(active) = workspace.active_dialogue_mut() {
-                    let output =
-                        inspector.show(ui, &mut active.graph, &mut active.node_editor, &mut status);
+                    let output = inspector.show(
+                        ui,
+                        &mut active.graph,
+                        &mut active.node_editor,
+                        &mut status,
+                        &mut portrait_browser,
+                        &asset_server,
+                        &mut egui_textures,
+                        &images,
+                    );
                     if output.dirty {
                         active.dirty = true;
                     }

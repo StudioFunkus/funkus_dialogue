@@ -6,116 +6,121 @@
         "id": 1,
         "text": "Hello there! This is a test dialogue. Nice to meet you!",
         "speaker": "Guide",
-        "portrait": null
+        "portrait": "dialogue/portraits/placeholder.png"
       },
       {
         "type": "Choice",
         "id": 2,
         "prompt": "How would you like to respond?",
-        "speaker": "Guide",
-        "portrait": null
+        "speaker": "Guide"
       },
       {
         "type": "Text",
         "id": 3,
         "text": "I'm glad we're getting along! Let me tell you more about this dialogue system.",
-        "speaker": "Guide",
-        "portrait": null
+        "speaker": "Guide"
       },
       {
         "type": "Text",
         "id": 4,
         "text": "This is the Funkus Dialogue System for Bevy. It allows you to create interactive conversations with branching paths.",
-        "speaker": "Guide",
-        "portrait": null
+        "speaker": "Guide"
       },
       {
         "type": "Text",
         "id": 5,
         "text": "Farewell! Come back when you want to talk more.",
-        "speaker": "Guide",
-        "portrait": null
+        "speaker": "Guide"
       },
       {
         "type": "Choice",
         "id": 6,
         "prompt": "What would you like to know about?",
-        "speaker": "Guide",
-        "portrait": null
+        "speaker": "Guide"
       },
       {
         "type": "Text",
         "id": 7,
         "text": "You can create dialogues by defining JSON files with nodes and connections, or eventually using a visual editor.",
-        "speaker": "Guide",
-        "portrait": null
+        "speaker": "Guide"
       },
       {
         "type": "Text",
         "id": 8,
         "text": "The system supports text nodes for narration and choice nodes for player decisions. More types like conditions are planned!",
-        "speaker": "Guide",
-        "portrait": null
+        "speaker": "Guide"
       }
     ],
     "connections": [
       {
         "from": 1,
         "to": 2,
-        "label": null
+        "label": null,
+        "order": 0
       },
       {
         "from": 2,
         "to": 3,
-        "label": "Nice to meet you too!"
+        "label": "Nice to meet you too!",
+        "order": 0
       },
       {
         "from": 2,
         "to": 4,
-        "label": "What is this dialogue system?"
+        "label": "What is this dialogue system?",
+        "order": 1
       },
       {
         "from": 2,
         "to": 5,
-        "label": "Goodbye for now."
+        "label": "Goodbye for now.",
+        "order": 2
       },
       {
         "from": 3,
         "to": 4,
-        "label": null
+        "label": null,
+        "order": 0
       },
       {
         "from": 4,
         "to": 6,
-        "label": null
-      },
-      {
-        "from": 6,
-        "to": 7,
-        "label": "How do I create dialogue?"
-      },
-      {
-        "from": 6,
-        "to": 8,
-        "label": "What node types are available?"
+        "label": null,
+        "order": 0
       },
       {
         "from": 6,
         "to": 5,
-        "label": "That's all I need to know."
+        "label": "That's all I need to know.",
+        "order": 2
+      },
+      {
+        "from": 6,
+        "to": 7,
+        "label": "How do I create dialogue?",
+        "order": 0
+      },
+      {
+        "from": 6,
+        "to": 8,
+        "label": "What node types are available?",
+        "order": 1
       },
       {
         "from": 7,
         "to": 6,
-        "label": null
+        "label": null,
+        "order": 0
       },
       {
         "from": 8,
         "to": 6,
-        "label": null
+        "label": null,
+        "order": 0
       }
     ],
     "start_node": 1,
     "name": "Test Dialogue"
-  }
+  },
+  "name": "Test Dialogue"
 }

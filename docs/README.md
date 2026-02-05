@@ -17,6 +17,7 @@
 
 - [Game Events](integration/events.md)
 - [UI System](integration/ui.md)
+- [Editor Integration](integration/editor.md)
 - [Localization](integration/localization.md)
 
 ## Tutorials

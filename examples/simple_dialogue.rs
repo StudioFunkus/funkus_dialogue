@@ -38,7 +38,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((Name::new("Guide Conversation"), DialogueRunner::default()));
 
     // Load a dialogue asset
-    let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
+    let dialogue_handle = asset_server.load("dialogue/example.dialogue.json");
 
     // Print a message about controls
     info!("Press SPACE to advance dialogue or confirm choices, 1-9 to select choices, ESC to exit");

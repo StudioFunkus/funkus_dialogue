@@ -27,7 +27,7 @@
 //!
 //! fn setup(asset_server: Res<AssetServer>) {
 //!     let dialogue_handle: Handle<DialogueAsset> =
-//!         asset_server.load("dialogues/example.dialogue.json");
+//!         asset_server.load("dialogue/example.dialogue.json");
 //!     let _unused = dialogue_handle;
 //! }
 //! ```

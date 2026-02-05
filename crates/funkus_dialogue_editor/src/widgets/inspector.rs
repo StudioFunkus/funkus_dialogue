@@ -1,11 +1,15 @@
 //! Inspector panel for the active dialogue graph and selected node.
 
+use bevy::prelude::{AssetServer, Assets, Image};
 use bevy_egui::egui::{self, Ui};
+use bevy_egui::{EguiTextureHandle, EguiUserTextures};
 
 use funkus_dialogue_core::graph::{DialogueGraph, DialogueNode, NodeId};
+use rfd::FileDialog;
+use std::path::Path;
 
 use crate::node_editor::DialogueNodeEditorState;
-use crate::state::EditorStatusMessages;
+use crate::state::{EditorPortraitBrowser, EditorStatusMessages, SUPPORTED_PORTRAIT_EXTENSIONS};
 
 pub struct InspectorWidget;
 
@@ -31,6 +35,10 @@ impl InspectorWidget {
         graph: &mut DialogueGraph,
         node_state: &mut DialogueNodeEditorState,
         status: &mut EditorStatusMessages,
+        portrait_browser: &mut EditorPortraitBrowser,
+        asset_server: &AssetServer,
+        egui_textures: &mut EguiUserTextures,
+        images: &Assets<Image>,
     ) -> InspectorOutput {
         let mut dirty = false;
 
@@ -55,7 +63,17 @@ impl InspectorWidget {
                     speaker,
                     portrait,
                 } => {
-                    dirty |= draw_text_fields(ui, text, speaker, portrait);
+                    dirty |= draw_text_fields(
+                        ui,
+                        text,
+                        speaker,
+                        portrait,
+                        portrait_browser,
+                        asset_server,
+                        egui_textures,
+                        images,
+                        status,
+                    );
                     node_kind = Some(NodeKind::Text);
                 }
                 DialogueNode::Choice {
@@ -63,7 +81,17 @@ impl InspectorWidget {
                     speaker,
                     portrait,
                 } => {
-                    dirty |= draw_choice_fields(ui, prompt, speaker, portrait);
+                    dirty |= draw_choice_fields(
+                        ui,
+                        prompt,
+                        speaker,
+                        portrait,
+                        portrait_browser,
+                        asset_server,
+                        egui_textures,
+                        images,
+                        status,
+                    );
                     node_kind = Some(NodeKind::Choice);
                 }
             }
@@ -173,6 +201,11 @@ fn draw_text_fields(
     text: &mut String,
     speaker: &mut Option<String>,
     portrait: &mut Option<String>,
+    portrait_browser: &mut EditorPortraitBrowser,
+    asset_server: &AssetServer,
+    egui_textures: &mut EguiUserTextures,
+    images: &Assets<Image>,
+    status: &mut EditorStatusMessages,
 ) -> bool {
     let mut dirty = false;
 
@@ -187,9 +220,15 @@ fn draw_text_fields(
     if edit_optional_field(ui, "Speaker", speaker) {
         dirty = true;
     }
-    if edit_optional_field(ui, "Portrait", portrait) {
-        dirty = true;
-    }
+    dirty |= draw_portrait_picker(
+        ui,
+        portrait,
+        portrait_browser,
+        asset_server,
+        egui_textures,
+        images,
+        status,
+    );
 
     dirty
 }
@@ -209,6 +248,11 @@ fn draw_choice_fields(
     prompt: &mut Option<String>,
     speaker: &mut Option<String>,
     portrait: &mut Option<String>,
+    portrait_browser: &mut EditorPortraitBrowser,
+    asset_server: &AssetServer,
+    egui_textures: &mut EguiUserTextures,
+    images: &Assets<Image>,
+    status: &mut EditorStatusMessages,
 ) -> bool {
     let mut dirty = false;
 
@@ -220,9 +264,15 @@ fn draw_choice_fields(
     if edit_optional_field(ui, "Speaker", speaker) {
         dirty = true;
     }
-    if edit_optional_field(ui, "Portrait", portrait) {
-        dirty = true;
-    }
+    dirty |= draw_portrait_picker(
+        ui,
+        portrait,
+        portrait_browser,
+        asset_server,
+        egui_textures,
+        images,
+        status,
+    );
 
     dirty
 }
@@ -291,6 +341,80 @@ fn draw_choice_connections(
     dirty
 }
 
+fn draw_portrait_picker(
+    ui: &mut Ui,
+    portrait: &mut Option<String>,
+    portrait_browser: &mut EditorPortraitBrowser,
+    asset_server: &AssetServer,
+    egui_textures: &mut EguiUserTextures,
+    images: &Assets<Image>,
+    status: &mut EditorStatusMessages,
+) -> bool {
+    let mut dirty = false;
+
+    ui.label("Portrait");
+    ui.horizontal(|ui| {
+        let selected_label = portrait.as_deref().unwrap_or("None");
+        egui::ComboBox::from_id_salt("portrait_selector")
+            .selected_text(selected_label)
+            .show_ui(ui, |ui| {
+                if ui.selectable_label(portrait.is_none(), "None").clicked() {
+                    *portrait = None;
+                    dirty = true;
+                }
+
+                for path in &portrait_browser.available_assets {
+                    let label = asset_path_string(path);
+                    let is_selected = portrait.as_deref() == Some(label.as_str());
+                    if ui.selectable_label(is_selected, &label).clicked() {
+                        *portrait = Some(label);
+                        dirty = true;
+                    }
+                }
+            });
+
+        if ui.button("Import").clicked() {
+            if let Some(path) = FileDialog::new()
+                .add_filter("Images", SUPPORTED_PORTRAIT_EXTENSIONS)
+                .pick_file()
+            {
+                match portrait_browser.import_into_portrait_root(&path) {
+                    Ok(imported) => {
+                        let relative = portrait_browser.relative_path_if_within_assets(&imported);
+                        *portrait = Some(asset_path_string(&relative));
+                        status.success(format!("Imported portrait {}", relative.display()));
+                        dirty = true;
+                    }
+                    Err(error) => {
+                        status.error(format!(
+                            "Failed to import portrait {}: {error}",
+                            path.display()
+                        ));
+                    }
+                }
+            }
+        }
+
+        if ui.button("Clear").clicked() {
+            *portrait = None;
+            dirty = true;
+        }
+    });
+
+    if let Some(path) = portrait.as_ref() {
+        let handle = portrait_browser.load_handle(asset_server, path);
+        if images.get(&handle).is_some() {
+            let texture_id = egui_textures.add_image(EguiTextureHandle::Weak(handle.id()));
+            let size = egui::vec2(64.0, 64.0);
+            ui.image((texture_id, size));
+        } else {
+            ui.label("Loading portrait...");
+        }
+    }
+
+    dirty
+}
+
 fn edit_optional_field(ui: &mut Ui, label: &str, value: &mut Option<String>) -> bool {
     let mut buffer = value.clone().unwrap_or_default();
     let response = ui.horizontal(|ui| {
@@ -324,4 +448,8 @@ fn edit_optional_multiline(ui: &mut Ui, value: &mut Option<String>) -> bool {
         return true;
     }
     false
+}
+
+fn asset_path_string(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }

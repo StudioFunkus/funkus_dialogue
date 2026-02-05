@@ -8,6 +8,10 @@ pub struct DialogueDisplay;
 #[derive(Component)]
 pub struct SpeakerText;
 
+/// Component for portrait image
+#[derive(Component)]
+pub struct PortraitImage;
+
 /// Component for dialogue text
 #[derive(Component)]
 pub struct DialogueText;

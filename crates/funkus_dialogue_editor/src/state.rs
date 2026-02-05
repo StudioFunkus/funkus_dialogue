@@ -1,6 +1,7 @@
 use bevy::prelude::*;
 use bevy::prelude::{Message, MessageReader};
 use funkus_dialogue_core::graph::DialogueGraph;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -8,7 +9,22 @@ use std::path::{Path, PathBuf};
 use crate::node_editor::DialogueNodeEditorState;
 const DEFAULT_ASSETS_DIR: &str = "assets";
 const DIALOGUE_SUBDIR: &str = "dialogue";
+const PORTRAIT_SUBDIR: &str = "dialogue/portraits";
 const SUPPORTED_DIALOGUE_EXTENSIONS: &[&str] = &["json", "ron"];
+#[cfg(feature = "image_formats_all")]
+pub const SUPPORTED_PORTRAIT_EXTENSIONS: &[&str] = &[
+    "png", "jpg", "jpeg", "bmp", "tga", "gif", "hdr", "exr", "ktx2", "dds", "basis", "webp",
+    "tiff", "tif", "ico", "pnm", "qoi", "ff",
+];
+
+#[cfg(all(not(feature = "image_formats_all"), feature = "image_formats_basic"))]
+pub const SUPPORTED_PORTRAIT_EXTENSIONS: &[&str] = &["png", "jpg", "jpeg", "webp"];
+
+#[cfg(all(
+    not(feature = "image_formats_all"),
+    not(feature = "image_formats_basic")
+))]
+pub const SUPPORTED_PORTRAIT_EXTENSIONS: &[&str] = &[];
 
 /// In-memory representation of a dialogue asset that is currently open in the
 /// editor.
@@ -76,9 +92,181 @@ pub struct EditorAssetBrowser {
     needs_refresh: bool,
 }
 
+/// File-system backed list of portrait assets under `assets/dialogue/portraits`.
+#[derive(Resource, Debug)]
+pub struct EditorPortraitBrowser {
+    assets_root: PathBuf,
+    portrait_root: PathBuf,
+    canonical_portrait_root: PathBuf,
+    pub available_assets: Vec<PathBuf>,
+    loaded_handles: HashMap<String, Handle<Image>>,
+    needs_refresh: bool,
+}
+
+impl Default for EditorPortraitBrowser {
+    fn default() -> Self {
+        Self::new(default_assets_root())
+    }
+}
+
+impl EditorPortraitBrowser {
+    #[must_use]
+    pub fn with_assets_root(root: impl Into<PathBuf>) -> Self {
+        Self::new(root.into())
+    }
+
+    fn new(assets_root: PathBuf) -> Self {
+        let portrait_root = assets_root.join(PORTRAIT_SUBDIR);
+        let canonical_portrait_root =
+            fs::canonicalize(&portrait_root).unwrap_or_else(|_| portrait_root.clone());
+
+        let mut browser = Self {
+            assets_root,
+            portrait_root,
+            canonical_portrait_root,
+            available_assets: Vec::new(),
+            loaded_handles: HashMap::new(),
+            needs_refresh: true,
+        };
+
+        if let Err(error) = browser.ensure_portrait_directory() {
+            warn!(
+                "Failed to create portrait assets directory {}: {error}",
+                browser.portrait_root.display()
+            );
+        }
+
+        browser.refresh_assets();
+        browser
+    }
+    pub fn refresh_assets(&mut self) {
+        if let Err(error) = self.ensure_portrait_directory() {
+            warn!(
+                "Failed to ensure portrait directory {} exists: {error}",
+                self.portrait_root.display()
+            );
+        }
+
+        match collect_portrait_assets(&self.portrait_root, &self.assets_root) {
+            Ok(mut assets) => {
+                assets.sort();
+                self.available_assets = assets;
+            }
+            Err(error) => {
+                warn!(
+                    "Failed to scan portrait assets under {}: {error}",
+                    self.portrait_root.display()
+                );
+                self.available_assets.clear();
+            }
+        }
+
+        let keep: HashSet<String> = self
+            .available_assets
+            .iter()
+            .map(|path| portrait_key_for_path(path))
+            .collect();
+        self.loaded_handles.retain(|key, _| keep.contains(key));
+
+        self.needs_refresh = false;
+    }
+
+    pub fn load_handle(&mut self, asset_server: &AssetServer, path: &str) -> Handle<Image> {
+        if let Some(handle) = self.loaded_handles.get(path) {
+            return handle.clone();
+        }
+        let handle = asset_server.load::<Image>(path.to_string());
+        self.loaded_handles.insert(path.to_string(), handle.clone());
+        handle
+    }
+
+    pub fn mark_needs_refresh(&mut self) {
+        self.needs_refresh = true;
+    }
+
+    pub fn refresh_if_needed(&mut self) {
+        if self.needs_refresh {
+            self.refresh_assets();
+        }
+    }
+
+    pub fn import_into_portrait_root(&mut self, external_path: &Path) -> io::Result<PathBuf> {
+        self.ensure_portrait_directory()?;
+
+        let file_name = external_path.file_name().ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "Selected path {} does not have a valid file name.",
+                    external_path.display()
+                ),
+            )
+        })?;
+
+        let mut destination = self.portrait_root.join(file_name);
+        if destination.exists() {
+            let source = Path::new(file_name);
+            let stem = source
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("imported");
+            let extension = source.extension().and_then(|ext| ext.to_str());
+
+            let mut counter = 1;
+            loop {
+                let candidate = if let Some(ext) = extension {
+                    format!("{stem}-{counter}.{ext}")
+                } else {
+                    format!("{stem}-{counter}")
+                };
+                destination = self.portrait_root.join(candidate);
+                if !destination.exists() {
+                    break;
+                }
+                counter += 1;
+            }
+        }
+
+        fs::copy(external_path, &destination)?;
+        self.mark_needs_refresh();
+        Ok(destination)
+    }
+
+    #[must_use]
+    pub fn relative_path_if_within_assets(&self, path: &Path) -> PathBuf {
+        let absolute = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            self.assets_root.join(path)
+        };
+        absolute
+            .strip_prefix(&self.assets_root)
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| path.to_path_buf())
+    }
+
+    fn ensure_portrait_directory(&mut self) -> io::Result<()> {
+        fs::create_dir_all(&self.portrait_root)?;
+        if let Ok(canonical) = fs::canonicalize(&self.portrait_root) {
+            self.canonical_portrait_root = canonical;
+        }
+        Ok(())
+    }
+}
+
 impl Default for EditorAssetBrowser {
     fn default() -> Self {
-        let assets_root = default_assets_root();
+        Self::new(default_assets_root())
+    }
+}
+
+impl EditorAssetBrowser {
+    #[must_use]
+    pub fn with_assets_root(root: impl Into<PathBuf>) -> Self {
+        Self::new(root.into())
+    }
+
+    fn new(assets_root: PathBuf) -> Self {
         let dialogue_root = assets_root.join(DIALOGUE_SUBDIR);
         let canonical_dialogue_root =
             fs::canonicalize(&dialogue_root).unwrap_or_else(|_| dialogue_root.clone());
@@ -101,12 +289,8 @@ impl Default for EditorAssetBrowser {
         }
 
         browser.refresh_assets();
-
         browser
     }
-}
-
-impl EditorAssetBrowser {
     pub fn refresh_assets(&mut self) {
         let previous_selection = self.selected_relative_path();
 
@@ -318,6 +502,31 @@ fn collect_dialogue_assets(root: &Path) -> io::Result<Vec<PathBuf>> {
     Ok(files)
 }
 
+fn collect_portrait_assets(root: &Path, assets_root: &Path) -> io::Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    let mut stack = vec![root.to_path_buf()];
+
+    while let Some(dir) = stack.pop() {
+        for entry in fs::read_dir(&dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            let file_type = entry.file_type()?;
+            if file_type.is_dir() {
+                stack.push(path);
+            } else if file_type.is_file() && is_portrait_file(&path) {
+                if let Ok(relative) = path.strip_prefix(assets_root) {
+                    files.push(relative.to_path_buf());
+                } else {
+                    files.push(path);
+                }
+            }
+        }
+    }
+
+    files.sort();
+    Ok(files)
+}
+
 fn is_dialogue_file(path: &Path) -> bool {
     path.extension()
         .and_then(|ext| ext.to_str())
@@ -328,6 +537,22 @@ fn is_dialogue_file(path: &Path) -> bool {
                 .any(|candidate| candidate == &lower)
         })
         .unwrap_or(false)
+}
+
+fn is_portrait_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            let lower = ext.to_ascii_lowercase();
+            SUPPORTED_PORTRAIT_EXTENSIONS
+                .iter()
+                .any(|candidate| candidate == &lower)
+        })
+        .unwrap_or(false)
+}
+
+fn portrait_key_for_path(path: &Path) -> String {
+    path.to_string_lossy().replace('\\', "/")
 }
 
 fn default_assets_root() -> PathBuf {

@@ -9,6 +9,7 @@ use crate::components::*;
 /// System to display dialogue content.
 pub fn display_dialogue(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     dialogue_assets: Res<Assets<DialogueAsset>>,
     dialogue_query: Query<(&DialogueRunner, &Name)>,
     mut speaker_query: Query<&mut Text, With<SpeakerText>>,
@@ -20,6 +21,7 @@ pub fn display_dialogue(
             Without<ChoiceText>,
         ),
     >,
+    mut portrait_query: Query<(&mut ImageNode, &mut Node), With<PortraitImage>>,
     choices_query: Query<Entity, With<ChoicesContainer>>,
 ) {
     // Find the first active dialogue
@@ -32,6 +34,11 @@ pub fn display_dialogue(
 
             for mut dialogue_text in dialogue_query_text.iter_mut() {
                 *dialogue_text = Text::new("");
+            }
+
+            for (mut portrait_image, mut node) in portrait_query.iter_mut() {
+                portrait_image.image = default();
+                node.display = Display::None;
             }
 
             for choices_entity in choices_query.iter() {
@@ -49,7 +56,12 @@ pub fn display_dialogue(
                 if let Some(node) = dialogue.graph.get_node(node_id) {
                     // Process based on node type
                     match node {
-                        DialogueNode::Text { text, speaker, .. } => {
+                        DialogueNode::Text {
+                            text,
+                            speaker,
+                            portrait,
+                            ..
+                        } => {
                             // Update speaker
                             for mut speaker_text in speaker_query.iter_mut() {
                                 if let Some(speaker_name) = speaker {
@@ -64,6 +76,16 @@ pub fn display_dialogue(
                                 *dialogue_text = Text::new(text.clone());
                             }
 
+                            // Update portrait
+                            for (mut portrait_image, mut node) in portrait_query.iter_mut() {
+                                if let Some(path) = portrait.as_ref() {
+                                    portrait_image.image = asset_server.load(path.clone());
+                                    node.display = Display::Flex;
+                                } else {
+                                    node.display = Display::None;
+                                }
+                            }
+
                             // Clear choices
                             for choices_entity in choices_query.iter() {
                                 commands
@@ -72,7 +94,10 @@ pub fn display_dialogue(
                             }
                         }
                         DialogueNode::Choice {
-                            prompt, speaker, ..
+                            prompt,
+                            speaker,
+                            portrait,
+                            ..
                         } => {
                             // Update speaker
                             for mut speaker_text in speaker_query.iter_mut() {
@@ -89,6 +114,16 @@ pub fn display_dialogue(
                                     *dialogue_text = Text::new(prompt_text.clone());
                                 } else {
                                     *dialogue_text = Text::new("Choose an option:");
+                                }
+                            }
+
+                            // Update portrait
+                            for (mut portrait_image, mut node) in portrait_query.iter_mut() {
+                                if let Some(path) = portrait.as_ref() {
+                                    portrait_image.image = asset_server.load(path.clone());
+                                    node.display = Display::Flex;
+                                } else {
+                                    node.display = Display::None;
                                 }
                             }
 

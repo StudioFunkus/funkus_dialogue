@@ -21,9 +21,16 @@ bevy = "0.18"
 funkus_dialogue_core = { path = "crates/funkus_dialogue_core" }
 funkus_dialogue_ui = { path = "crates/funkus_dialogue_ui" }
 
+[dev-dependencies]
+funkus_dialogue_editor = { path = "crates/funkus_dialogue_editor" }
+
 [[example]]
 name = "simple_dialogue"
 path = "examples/simple_dialogue.rs"
+
+[[example]]
+name = "dialogue_editor"
+path = "examples/dialogue_editor.rs"
 
 [features]
 debug_ui = ["funkus_dialogue_core/debug_ui"]

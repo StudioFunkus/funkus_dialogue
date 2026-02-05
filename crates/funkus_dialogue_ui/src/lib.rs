@@ -43,6 +43,18 @@ pub fn spawn_dialogue_ui(commands: &mut Commands) -> Entity {
             DialogueDisplay,
         ))
         .with_children(|parent| {
+            // Portrait image (optional)
+            parent.spawn((
+                Node {
+                    width: Val::Px(64.0),
+                    height: Val::Px(64.0),
+                    margin: UiRect::right(Val::Px(12.0)),
+                    ..default()
+                },
+                ImageNode::default(),
+                PortraitImage,
+            ));
+
             // Speaker name
             parent.spawn((
                 Text::new(""),

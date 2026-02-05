@@ -334,7 +334,7 @@ pub struct SelectDialogueChoice {
 ///             if interactable.is_in_range {
 ///                 // Load dialogue asset for this NPC
 ///                 let dialogue_handle: Handle<DialogueAsset> =
-///                     asset_server.load("dialogues/npc.dialogue.json");
+///                     asset_server.load("dialogue/npc.dialogue.json");
 ///
 ///                 // Start the dialogue on the player entity
 ///                 start_events.write(StartDialogue {

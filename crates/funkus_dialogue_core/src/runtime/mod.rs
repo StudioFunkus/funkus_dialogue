@@ -36,7 +36,7 @@
 //!
 //!     // Load a dialogue asset
 //!     let dialogue_handle: Handle<DialogueAsset> =
-//!         asset_server.load("dialogues/npc.dialogue.json");
+//!         asset_server.load("dialogue/npc.dialogue.json");
 //!
 //!     // Start the dialogue
 //!     start_events.write(StartDialogue {

@@ -188,7 +188,7 @@ impl DialogueRunner {
     /// use funkus_dialogue_core::DialogueRunner;
     ///
     /// fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
-    ///     let dialogue_handle = asset_server.load("dialogues/example.dialogue.json");
+    ///     let dialogue_handle = asset_server.load("dialogue/example.dialogue.json");
     ///     
     ///     commands.spawn(DialogueRunner::new(dialogue_handle));
     /// }
