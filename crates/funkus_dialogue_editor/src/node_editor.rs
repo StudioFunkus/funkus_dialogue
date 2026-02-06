@@ -3,25 +3,24 @@
 //! The snarl widget owns interaction state (selection, drag, wire edits). We mirror
 //! its selection into `DialogueNodeEditorState` so the inspector can reflect it.
 
+mod theme;
+
 use std::collections::{HashMap, HashSet};
 
-use bevy_egui::egui::{self, Color32, Pos2, RichText, Stroke, Ui, Vec2, pos2, vec2};
-use egui_snarl::ui::{PinInfo, PinPlacement, SnarlPin, SnarlStyle, SnarlViewer, SnarlWidget};
+use bevy_egui::egui::{self, Color32, Pos2, RichText, Ui, Vec2, pos2, vec2};
+use egui_snarl::ui::{
+    BackgroundPattern, Grid, PinInfo, PinPlacement, SnarlPin, SnarlStyle, SnarlViewer, SnarlWidget,
+};
 use egui_snarl::{InPin, InPinId, NodeId as SnarlNodeId, OutPin, OutPinId, Snarl};
 use funkus_dialogue_core::graph::{ConnectionData, DialogueGraph, DialogueNode, NodeId};
 use funkus_dialogue_core::{DialogueEditorMetadata, DialogueEditorNodeMetadata};
+use theme::GraphTheme;
 
 const NODE_GRID_COLUMNS: usize = 4;
 const NODE_GRID_SPACING: Vec2 = vec2(280.0, 180.0);
 const NODE_BODY_WIDTH: f32 = 220.0;
 const NODE_BODY_MAX_CHARS: usize = 64;
 const NODE_OUTPUT_MAX_CHARS: usize = 28;
-
-const TEXT_NODE_COLOR: Color32 = Color32::from_rgb(0x4A, 0xB0, 0xE6);
-const CHOICE_NODE_COLOR: Color32 = Color32::from_rgb(0xE6, 0x9D, 0x4A);
-const ADD_SLOT_COLOR: Color32 = Color32::from_rgb(0x8A, 0x8A, 0x8A);
-const START_NODE_COLOR: Color32 = Color32::from_rgb(0x2F, 0x5E, 0x3B);
-const EFFECT_NODE_COLOR: Color32 = Color32::from_rgb(0x7A, 0x6A, 0xE6);
 
 #[derive(Clone, Debug)]
 pub struct DialogueNodeView {
@@ -319,10 +318,22 @@ pub fn draw_dialogue_node_editor(
             .id_salt("dialogue_snarl")
             .min_size(available)
             .style(SnarlStyle {
+                bg_pattern: Some(BackgroundPattern::Grid(Grid::new(
+                    GraphTheme::GRID_SPACING,
+                    0.0,
+                ))),
+                bg_pattern_stroke: Some(GraphTheme::grid_stroke()),
+                collapsible: Some(true),
                 pin_placement: Some(PinPlacement::Edge),
+                wire_width: Some(GraphTheme::WIRE_WIDTH),
                 ..SnarlStyle::new()
             });
+
+        // Apply node-canvas typography without affecting the surrounding editor UI.
+        let old_style = ui.style().clone();
+        GraphTheme::apply_node_text_styles(ui.style_mut());
         let response = snarl_widget.show(snarl, &mut viewer, ui);
+        *ui.style_mut() = old_style.as_ref().clone();
         let response_clicked = response.clicked();
         let viewer_dirty = viewer.dirty;
 
@@ -496,9 +507,25 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
     ) -> egui::Frame {
         if let Some(graph_id) = self.graph_id_for_node(node, snarl) {
             if self.graph.start_node == Some(graph_id) {
-                default.fill = START_NODE_COLOR;
-                default.stroke = Stroke::new(1.5, Color32::from_rgb(0x6B, 0xC5, 0x7A));
+                // Highlight the start node with an outline.
+                default.stroke = GraphTheme::start_node_stroke();
             }
+        }
+        default
+    }
+
+    fn header_frame(
+        &mut self,
+        mut default: egui::Frame,
+        node: SnarlNodeId,
+        _inputs: &[InPin],
+        _outputs: &[OutPin],
+        snarl: &Snarl<DialogueNodeView>,
+    ) -> egui::Frame {
+        if let Some(graph_id) = self.graph_id_for_node(node, snarl)
+            && let Some(node) = self.node_kind(graph_id)
+        {
+            default.fill = GraphTheme::palette_for_node(node).header_fill;
         }
         default
     }
@@ -513,9 +540,14 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
     ) {
         if let Some(graph_id) = self.graph_id_for_node(node, snarl) {
             ui.horizontal(|ui| {
-                ui.label(self.title(&snarl[node]));
+                ui.label(
+                    RichText::new(self.title(&snarl[node]))
+                        .color(Color32::WHITE)
+                        .strong()
+                        .text_style(GraphTheme::text_style_node_header()),
+                );
                 if self.graph.start_node == Some(graph_id) {
-                    ui.label(RichText::new("Start").color(Color32::LIGHT_GREEN));
+                    ui.label(RichText::new("Start").color(Color32::from_rgb(0x6B, 0xC5, 0x7A)));
                 } else if ui.small_button("Set Start").clicked() {
                     let _ = self.graph.set_start_node(graph_id);
                     self.dirty = true;
@@ -536,13 +568,17 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
         ui: &mut Ui,
         snarl: &mut Snarl<DialogueNodeView>,
     ) -> impl SnarlPin + 'static {
+        let wire_color = self.infer_input_wire_color(pin, snarl);
         let graph_id = snarl[pin.id.node].graph_id;
         ui.label("In");
-        if self.graph.start_node == Some(graph_id) {
-            PinInfo::circle().with_fill(Color32::LIGHT_GREEN)
-        } else {
-            PinInfo::circle().with_fill(Color32::GRAY)
+        let mut info = PinInfo::circle().with_fill(GraphTheme::INPUT_PIN_FILL);
+        if let Some(wire_color) = wire_color {
+            info = info.with_wire_color(wire_color);
         }
+        if self.graph.start_node == Some(graph_id) {
+            info = info.with_stroke(GraphTheme::start_node_stroke());
+        }
+        info
     }
 
     fn outputs(&mut self, node: &DialogueNodeView) -> usize {
@@ -564,17 +600,21 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
             }
         }
 
+        let mut info = PinInfo::triangle();
+        if output.is_add_slot {
+            info = info
+                .with_fill(GraphTheme::ADD_SLOT_LINK)
+                .with_wire_color(GraphTheme::ADD_SLOT_LINK);
+            return info;
+        }
+
         match self.node_kind(graph_id) {
-            Some(DialogueNode::Text { .. }) => PinInfo::triangle().with_fill(TEXT_NODE_COLOR),
-            Some(DialogueNode::Choice { .. }) => {
-                PinInfo::triangle().with_fill(if output.is_add_slot {
-                    ADD_SLOT_COLOR
-                } else {
-                    CHOICE_NODE_COLOR
-                })
+            Some(node) => {
+                let palette = GraphTheme::palette_for_node(node);
+                info.with_fill(palette.link_color)
+                    .with_wire_color(palette.link_color)
             }
-            Some(DialogueNode::Effect { .. }) => PinInfo::triangle().with_fill(EFFECT_NODE_COLOR),
-            None => PinInfo::triangle().with_fill(Color32::DARK_GRAY),
+            None => info.with_fill(Color32::DARK_GRAY),
         }
     }
 
@@ -850,6 +890,39 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
         _ui: &mut Ui,
         _snarl: &mut Snarl<DialogueNodeView>,
     ) {
+    }
+}
+
+impl DialogueSnarlViewer<'_> {
+    fn infer_input_wire_color(
+        &self,
+        pin: &InPin,
+        snarl: &Snarl<DialogueNodeView>,
+    ) -> Option<Color32> {
+        let mut remotes = pin.remotes.iter();
+        let first = remotes.next()?;
+        let mut color = self.out_pin_wire_color(*first, snarl)?;
+        for remote in remotes {
+            if let Some(next) = self.out_pin_wire_color(*remote, snarl) {
+                color = Color32::from_rgba_premultiplied(
+                    u8::midpoint(color.r(), next.r()),
+                    u8::midpoint(color.g(), next.g()),
+                    u8::midpoint(color.b(), next.b()),
+                    u8::midpoint(color.a(), next.a()),
+                );
+            }
+        }
+        Some(color)
+    }
+
+    fn out_pin_wire_color(
+        &self,
+        pin: OutPinId,
+        snarl: &Snarl<DialogueNodeView>,
+    ) -> Option<Color32> {
+        let graph_id = snarl.get_node(pin.node)?.graph_id;
+        let node = self.node_kind(graph_id)?;
+        Some(GraphTheme::palette_for_node(node).link_color)
     }
 }
 
