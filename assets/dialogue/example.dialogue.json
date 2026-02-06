@@ -49,6 +49,127 @@
         "id": 8,
         "text": "The system supports text nodes for narration and choice nodes for player decisions. More types like conditions are planned!",
         "speaker": "Guide"
+      },
+      {
+        "type": "Effect",
+        "id": 9,
+        "effect": {
+          "key": "game.gold",
+          "op": "add",
+          "value": {
+            "type": "int",
+            "value": 25
+          }
+        }
+      },
+      {
+        "type": "Effect",
+        "id": 10,
+        "effect": {
+          "key": "game.met_npc",
+          "op": "toggle",
+          "value": {
+            "type": "bool",
+            "value": true
+          }
+        }
+      },
+      {
+        "type": "Effect",
+        "id": 11,
+        "effect": {
+          "key": "game.reputation",
+          "op": "add",
+          "value": {
+            "type": "float",
+            "value": 0.15
+          }
+        }
+      },
+      {
+        "type": "Effect",
+        "id": 12,
+        "effect": {
+          "key": "game.title",
+          "op": "set",
+          "value": {
+            "type": "string",
+            "value": "Friend"
+          }
+        }
+      },
+      {
+        "type": "Effect",
+        "id": 13,
+        "effect": {
+          "key": "game.inventory",
+          "op": "set",
+          "value": {
+            "type": "list",
+            "value": [
+              {
+                "type": "enum",
+                "value": "Map"
+              },
+              {
+                "type": "enum",
+                "value": "Potion"
+              },
+              {
+                "type": "enum",
+                "value": "Key"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "type": "Effect",
+        "id": 14,
+        "effect": {
+          "key": "game.inventory",
+          "op": "push",
+          "value": {
+            "type": "enum",
+            "value": "Potion"
+          }
+        }
+      },
+      {
+        "type": "Effect",
+        "id": 15,
+        "effect": {
+          "key": "game.inventory",
+          "op": "remove",
+          "value": {
+            "type": "enum",
+            "value": "Map"
+          }
+        }
+      },
+      {
+        "type": "Effect",
+        "id": 16,
+        "effect": {
+          "key": "game.inventory",
+          "op": "clear",
+          "value": {
+            "type": "list",
+            "value": []
+          }
+        }
+      },
+      {
+        "type": "Effect",
+        "id": 17,
+        "effect": {
+          "key": "game.mood",
+          "op": "set",
+          "value": {
+            "type": "enum",
+            "value": "Happy"
+          }
+        }
       }
     ],
     "connections": [
@@ -61,20 +182,62 @@
       {
         "from": 2,
         "to": 3,
-        "label": "Nice to meet you too!",
+        "label": "Let's just talk",
+        "order": 5
+      },
+      {
+        "from": 2,
+        "to": 9,
+        "label": "Give me some gold",
         "order": 0
       },
       {
         "from": 2,
-        "to": 4,
-        "label": "What is this dialogue system?",
+        "to": 10,
+        "label": "Mark that we've met",
         "order": 1
       },
       {
         "from": 2,
-        "to": 5,
-        "label": "Goodbye for now.",
+        "to": 11,
+        "label": "Boost my reputation",
         "order": 2
+      },
+      {
+        "from": 2,
+        "to": 12,
+        "label": "Give me a title",
+        "order": 3
+      },
+      {
+        "from": 2,
+        "to": 13,
+        "label": "Restock my inventory",
+        "order": 4
+      },
+      {
+        "from": 2,
+        "to": 14,
+        "label": "Add a potion",
+        "order": 6
+      },
+      {
+        "from": 2,
+        "to": 15,
+        "label": "Remove the map",
+        "order": 7
+      },
+      {
+        "from": 2,
+        "to": 16,
+        "label": "Clear inventory",
+        "order": 8
+      },
+      {
+        "from": 2,
+        "to": 17,
+        "label": "Set mood to Happy",
+        "order": 9
       },
       {
         "from": 3,
@@ -87,6 +250,12 @@
         "to": 6,
         "label": null,
         "order": 0
+      },
+      {
+        "from": 6,
+        "to": 2,
+        "label": "Make more effect choices",
+        "order": 3
       },
       {
         "from": 6,
@@ -114,6 +283,60 @@
       },
       {
         "from": 8,
+        "to": 6,
+        "label": null,
+        "order": 0
+      },
+      {
+        "from": 9,
+        "to": 6,
+        "label": null,
+        "order": 0
+      },
+      {
+        "from": 10,
+        "to": 6,
+        "label": null,
+        "order": 0
+      },
+      {
+        "from": 11,
+        "to": 6,
+        "label": null,
+        "order": 0
+      },
+      {
+        "from": 12,
+        "to": 6,
+        "label": null,
+        "order": 0
+      },
+      {
+        "from": 13,
+        "to": 6,
+        "label": null,
+        "order": 0
+      },
+      {
+        "from": 14,
+        "to": 6,
+        "label": null,
+        "order": 0
+      },
+      {
+        "from": 15,
+        "to": 6,
+        "label": null,
+        "order": 0
+      },
+      {
+        "from": 16,
+        "to": 6,
+        "label": null,
+        "order": 0
+      },
+      {
+        "from": 17,
         "to": 6,
         "label": null,
         "order": 0

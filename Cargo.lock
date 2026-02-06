@@ -2686,10 +2686,21 @@ dependencies = [
  "bevy",
  "bevy_common_assets",
  "bevy_egui",
+ "funkus_dialogue_derive",
  "petgraph 0.7.1",
  "serde",
  "serde_json",
  "thiserror 2.0.12",
+ "tracing",
+]
+
+[[package]]
+name = "funkus_dialogue_derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
 ]
 
 [[package]]

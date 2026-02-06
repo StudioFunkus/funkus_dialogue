@@ -14,6 +14,7 @@ use bevy_egui::{
 };
 use funkus_dialogue_core::DialogueAsset;
 use funkus_dialogue_core::graph::DialogueGraph;
+use funkus_dialogue_core::registry::DialogueRegistry;
 use ron::ser::PrettyConfig;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -247,6 +248,7 @@ fn draw_editor_ui(
     asset_server: Res<AssetServer>,
     mut egui_textures: ResMut<EguiUserTextures>,
     images: Res<Assets<Image>>,
+    registry: Option<Res<DialogueRegistry>>,
 ) {
     if let Some((mut ctx, _)) = contexts.iter_mut().find(|(_, primary)| primary.is_some()) {
         let ctx = ctx.get_mut();
@@ -303,6 +305,7 @@ fn draw_editor_ui(
                         &asset_server,
                         &mut egui_textures,
                         &images,
+                        registry.as_deref(),
                     );
                     if output.dirty {
                         active.dirty = true;

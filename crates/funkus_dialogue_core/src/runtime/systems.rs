@@ -3,11 +3,15 @@
 //! This module provides the Bevy systems that handle dialogue runtime processing,
 //! including system setup, event handling, and dialogue state updates.
 
+use bevy::ecs::message::{MessageCursor, Messages};
 use bevy::prelude::*;
+use tracing::{error, warn};
 
 use crate::asset::DialogueAsset;
+use crate::registry::DialogueRegistry;
 use crate::runtime::DialogueRunner;
 use crate::runtime::DialogueState;
+use crate::{AdvanceDialogue, DialogueNodeActivated};
 
 /// System that updates all dialogue runners.
 ///
@@ -87,6 +91,9 @@ pub fn update_dialogue_runners(
 /// ```
 #[derive(SystemSet, Debug, Hash, PartialEq, Eq, Clone)]
 pub struct DialogueSystemSet;
+
+#[derive(Resource, Default)]
+struct DialogueEffectCursor(MessageCursor<DialogueNodeActivated>);
 
 /// System for handling dialogue events.
 ///
@@ -257,6 +264,73 @@ pub fn handle_dialogue_events(
     }
 }
 
+/// Apply dialogue effect nodes and auto-advance after execution.
+fn apply_dialogue_effects(world: &mut World) {
+    let events: Vec<DialogueNodeActivated> =
+        world.resource_scope(|world, mut cursor: Mut<DialogueEffectCursor>| {
+            let messages = world.resource::<Messages<DialogueNodeActivated>>();
+            cursor.0.read(&messages).cloned().collect()
+        });
+
+    if events.is_empty() {
+        return;
+    }
+
+    for event in events {
+        let dialogue_handle = match world.get::<DialogueRunner>(event.entity) {
+            Some(runner) => runner.dialogue_handle.clone(),
+            None => continue,
+        };
+        let effect = {
+            let dialogue_assets = world.resource::<Assets<DialogueAsset>>();
+            let Some(dialogue) = dialogue_assets.get(&dialogue_handle) else {
+                continue;
+            };
+            let Some(node) = dialogue.graph.get_node(event.node_id) else {
+                continue;
+            };
+            let crate::graph::DialogueNode::Effect { effect } = node else {
+                continue;
+            };
+            effect.clone()
+        };
+
+        let field = world
+            .resource::<DialogueRegistry>()
+            .field(&effect.key)
+            .cloned();
+        let Some(field) = field else {
+            warn!("Dialogue effect key {} is not registered", effect.key);
+            continue;
+        };
+
+        let reflect_from_ptr = {
+            let type_registry = world.resource::<AppTypeRegistry>();
+            let type_registry = type_registry.read();
+            crate::registry::resolve_reflect_from_ptr(&type_registry, &field)
+        };
+
+        let Ok(reflect_from_ptr) = reflect_from_ptr else {
+            error!("Missing ReflectFromPtr for {}", effect.key);
+            continue;
+        };
+
+        if let Err(err) = crate::registry::apply_effect_with_field_and_reflect(
+            world,
+            &field,
+            &reflect_from_ptr,
+            &effect,
+        ) {
+            error!("Failed to apply dialogue effect {}: {}", effect.key, err);
+        }
+        world
+            .resource_mut::<Messages<AdvanceDialogue>>()
+            .write(AdvanceDialogue {
+                entity: event.entity,
+            });
+    }
+}
+
 /// Set up the dialogue systems.
 ///
 /// This function registers all dialogue-related systems with the Bevy app,
@@ -282,6 +356,13 @@ pub fn handle_dialogue_events(
 pub fn setup_dialogue_systems(app: &mut App) {
     app.configure_sets(Update, DialogueSystemSet).add_systems(
         Update,
-        (update_dialogue_runners, handle_dialogue_events).in_set(DialogueSystemSet),
+        (
+            update_dialogue_runners,
+            handle_dialogue_events,
+            apply_dialogue_effects,
+        )
+            .chain()
+            .in_set(DialogueSystemSet),
     );
+    app.init_resource::<DialogueEffectCursor>();
 }

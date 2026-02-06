@@ -82,6 +82,7 @@ mod asset;
 mod error;
 mod events;
 pub mod graph;
+pub mod registry;
 mod runtime;
 
 // Conditionally include the debug module
@@ -97,7 +98,12 @@ pub use events::{
     AdvanceDialogue, DialogueChoiceMade, DialogueEnded, DialogueNodeActivated, DialogueStarted,
     SelectDialogueChoice, StartDialogue, StopDialogue,
 };
+pub use funkus_dialogue_derive::DialogueResource;
 pub use graph::{Connection, DialogueGraph, DialogueNode, NodeId};
+pub use registry::{
+    DialogueEffect, DialogueOperation, DialogueRegistry, DialogueRegistryAppExt,
+    DialogueRegistryPlugin, DialogueResource, DialogueResourceTypeData, DialogueValue,
+};
 pub use runtime::{DialogueRunner, DialogueState};
 
 /// Plugin that sets up the dialogue system components, assets, and systems.
@@ -130,6 +136,8 @@ impl Plugin for DialoguePlugin {
         // Register assets
         app.register_type::<graph::NodeId>()
             .register_type::<runtime::DialogueState>()
+            .register_type::<registry::DialogueEffect>()
+            .register_type::<registry::DialogueValue>()
             .add_plugins(bevy_common_assets::json::JsonAssetPlugin::<
                 asset::DialogueAsset,
             >::new(&["dialogue.json"]));
@@ -146,6 +154,7 @@ impl Plugin for DialoguePlugin {
 
         // Set up dialogue systems
         runtime::setup_dialogue_systems(app);
+        app.add_plugins(registry::DialogueRegistryPlugin);
     }
 }
 

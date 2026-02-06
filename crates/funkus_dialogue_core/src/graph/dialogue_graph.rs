@@ -69,6 +69,8 @@ impl Serialize for DialogueGraph {
             speaker: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             portrait: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            effect: Option<crate::registry::DialogueEffect>,
         }
 
         #[derive(Serialize)]
@@ -94,9 +96,10 @@ impl Serialize for DialogueGraph {
         for index in self.graph.node_indices() {
             if let Some(node) = self.graph.node_weight(index) {
                 let node_id = NodeId::from_index(index);
-                let (node_type, text, prompt) = match node {
-                    DialogueNode::Text { text, .. } => ("Text", Some(text.clone()), None),
-                    DialogueNode::Choice { prompt, .. } => ("Choice", None, prompt.clone()),
+                let (node_type, text, prompt, effect) = match node {
+                    DialogueNode::Text { text, .. } => ("Text", Some(text.clone()), None, None),
+                    DialogueNode::Choice { prompt, .. } => ("Choice", None, prompt.clone(), None),
+                    DialogueNode::Effect { effect } => ("Effect", None, None, Some(effect.clone())),
                 };
                 let (speaker, portrait) = match node {
                     DialogueNode::Text {
@@ -105,6 +108,7 @@ impl Serialize for DialogueGraph {
                     | DialogueNode::Choice {
                         speaker, portrait, ..
                     } => (speaker.clone(), portrait.clone()),
+                    DialogueNode::Effect { .. } => (None, None),
                 };
 
                 nodes.push(SerialNode {
@@ -114,6 +118,7 @@ impl Serialize for DialogueGraph {
                     prompt,
                     speaker,
                     portrait,
+                    effect,
                 });
             }
         }
@@ -167,6 +172,7 @@ impl<'de> Deserialize<'de> for DialogueGraph {
             prompt: Option<String>,
             speaker: Option<String>,
             portrait: Option<String>,
+            effect: Option<crate::registry::DialogueEffect>,
         }
 
         #[derive(Deserialize)]
@@ -202,6 +208,15 @@ impl<'de> Deserialize<'de> for DialogueGraph {
                         let _ = choice.set_prompt(prompt);
                     }
                     choice
+                }
+                "Effect" => {
+                    let effect = node_data.effect.unwrap_or_else(|| {
+                        crate::registry::DialogueEffect::set(
+                            "game.flag",
+                            crate::registry::DialogueValue::Bool(true),
+                        )
+                    });
+                    DialogueNode::effect(effect)
                 }
                 // Ignore unknown variants so assets remain forward-compatible
                 _ => continue,

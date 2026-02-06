@@ -20,6 +20,7 @@ const TEXT_NODE_COLOR: Color32 = Color32::from_rgb(0x4A, 0xB0, 0xE6);
 const CHOICE_NODE_COLOR: Color32 = Color32::from_rgb(0xE6, 0x9D, 0x4A);
 const ADD_SLOT_COLOR: Color32 = Color32::from_rgb(0x8A, 0x8A, 0x8A);
 const START_NODE_COLOR: Color32 = Color32::from_rgb(0x2F, 0x5E, 0x3B);
+const EFFECT_NODE_COLOR: Color32 = Color32::from_rgb(0x7A, 0x6A, 0xE6);
 
 #[derive(Clone, Debug)]
 pub struct DialogueNodeView {
@@ -129,7 +130,7 @@ impl DialogueNodeEditorState {
 
         let connections = graph.get_connected_nodes(node_id);
         let output_count = match node {
-            DialogueNode::Text { .. } => 1,
+            DialogueNode::Text { .. } | DialogueNode::Effect { .. } => 1,
             DialogueNode::Choice { .. } => {
                 let count = connections.len();
                 if count == 0 { 1 } else { count + 1 }
@@ -210,6 +211,7 @@ pub fn draw_dialogue_node_editor(
     }
     let mut add_text_node = false;
     let mut add_choice_node = false;
+    let mut add_effect_node = false;
 
     ui.horizontal(|ui| {
         if ui.button("Add Text Node").clicked() {
@@ -218,6 +220,10 @@ pub fn draw_dialogue_node_editor(
 
         if ui.button("Add Choice Node").clicked() {
             add_choice_node = true;
+        }
+
+        if ui.button("Add Effect Node").clicked() {
+            add_effect_node = true;
         }
     });
 
@@ -246,6 +252,20 @@ pub fn draw_dialogue_node_editor(
                 graph_to_snarl,
                 spawn_index,
                 DialogueNode::choice(),
+            );
+            dirty = true;
+        }
+
+        if add_effect_node {
+            spawn_node(
+                graph,
+                snarl,
+                graph_to_snarl,
+                spawn_index,
+                DialogueNode::effect(funkus_dialogue_core::registry::DialogueEffect::set(
+                    "game.flag",
+                    funkus_dialogue_core::registry::DialogueValue::Bool(true),
+                )),
             );
             dirty = true;
         }
@@ -333,7 +353,7 @@ impl<'a> DialogueSnarlViewer<'a> {
 
     fn output_count(&self, id: NodeId) -> usize {
         match self.node_kind(id) {
-            Some(DialogueNode::Text { .. }) => 1,
+            Some(DialogueNode::Text { .. }) | Some(DialogueNode::Effect { .. }) => 1,
             Some(DialogueNode::Choice { .. }) => {
                 let count = sorted_connections(self.graph, id).len();
                 if count == 0 {
@@ -348,7 +368,7 @@ impl<'a> DialogueSnarlViewer<'a> {
 
     fn output_label(&self, id: NodeId, output_index: usize) -> OutputLabel {
         match self.node_kind(id) {
-            Some(DialogueNode::Text { .. }) => OutputLabel {
+            Some(DialogueNode::Text { .. }) | Some(DialogueNode::Effect { .. }) => OutputLabel {
                 short: "Next".to_string(),
                 full: None,
                 is_add_slot: false,
@@ -418,6 +438,7 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
         match self.node_kind(node.graph_id) {
             Some(DialogueNode::Text { .. }) => format!("Text {}", node.graph_id.raw()),
             Some(DialogueNode::Choice { .. }) => format!("Choice {}", node.graph_id.raw()),
+            Some(DialogueNode::Effect { .. }) => format!("Effect {}", node.graph_id.raw()),
             None => format!("Missing {}", node.graph_id.raw()),
         }
     }
@@ -509,6 +530,7 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
                     CHOICE_NODE_COLOR
                 })
             }
+            Some(DialogueNode::Effect { .. }) => PinInfo::triangle().with_fill(EFFECT_NODE_COLOR),
             None => PinInfo::triangle().with_fill(Color32::DARK_GRAY),
         }
     }
@@ -594,6 +616,22 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
                     ui.label(RichText::new(format!("Outputs: {}", connections_len)).small());
                 });
             }
+            DialogueNode::Effect { effect } => {
+                ui.vertical(|ui| {
+                    ui.set_width(NODE_BODY_WIDTH);
+                    ui.label(RichText::new("Effect Node").strong());
+                    ui.add_sized(
+                        [NODE_BODY_WIDTH, 0.0],
+                        egui::Label::new(RichText::new(format!("Key: {}", effect.key)).small())
+                            .wrap(),
+                    );
+                    ui.add_sized(
+                        [NODE_BODY_WIDTH, 0.0],
+                        egui::Label::new(RichText::new(format!("Op: {:?}", effect.op)).small())
+                            .wrap(),
+                    );
+                });
+            }
         }
     }
 
@@ -657,6 +695,21 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
             self.dirty = true;
             ui.close();
         }
+        if ui.button("Effect").clicked() {
+            let node_id = self.graph.add_node(DialogueNode::effect(
+                funkus_dialogue_core::registry::DialogueEffect::set(
+                    "game.flag",
+                    funkus_dialogue_core::registry::DialogueValue::Bool(true),
+                ),
+            ));
+            self.add_snarl_node(snarl, node_id, pos);
+            self.bump_spawn_index();
+            if self.graph.start_node.is_none() {
+                let _ = self.graph.set_start_node(node_id);
+            }
+            self.dirty = true;
+            ui.close();
+        }
     }
 
     fn connect(&mut self, from: &OutPin, to: &InPin, snarl: &mut Snarl<DialogueNodeView>) {
@@ -671,7 +724,10 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
             return;
         }
 
-        let is_text_node = matches!(self.node_kind(from_graph), Some(DialogueNode::Text { .. }));
+        let is_text_node = matches!(
+            self.node_kind(from_graph),
+            Some(DialogueNode::Text { .. } | DialogueNode::Effect { .. })
+        );
 
         if is_text_node {
             let connections = sorted_connections(self.graph, from_graph);

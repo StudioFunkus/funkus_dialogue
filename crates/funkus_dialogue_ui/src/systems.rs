@@ -176,6 +176,26 @@ pub fn display_dialogue(
                                 }
                             }
                         }
+                        DialogueNode::Effect { .. } => {
+                            for mut speaker_text in speaker_query.iter_mut() {
+                                *speaker_text = Text::new("");
+                            }
+
+                            for mut dialogue_text in dialogue_query_text.iter_mut() {
+                                *dialogue_text = Text::new("");
+                            }
+
+                            for (mut portrait_image, mut node) in portrait_query.iter_mut() {
+                                portrait_image.image = default();
+                                node.display = Display::None;
+                            }
+
+                            for choices_entity in choices_query.iter() {
+                                commands
+                                    .entity(choices_entity)
+                                    .despawn_related::<Children>();
+                            }
+                        }
                     }
                 }
             }

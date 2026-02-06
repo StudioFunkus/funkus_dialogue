@@ -5,6 +5,9 @@ use bevy_egui::egui::{self, Ui};
 use bevy_egui::{EguiTextureHandle, EguiUserTextures};
 
 use funkus_dialogue_core::graph::{DialogueGraph, DialogueNode, NodeId};
+use funkus_dialogue_core::registry::{
+    DialogueEffect, DialogueFieldKind, DialogueOperation, DialogueRegistry, DialogueValue,
+};
 use rfd::FileDialog;
 use std::path::Path;
 
@@ -26,6 +29,7 @@ enum NodeOutcome {
 enum NodeKind {
     Text,
     Choice,
+    Effect,
 }
 
 impl InspectorWidget {
@@ -39,6 +43,7 @@ impl InspectorWidget {
         asset_server: &AssetServer,
         egui_textures: &mut EguiUserTextures,
         images: &Assets<Image>,
+        registry: Option<&DialogueRegistry>,
     ) -> InspectorOutput {
         let mut dirty = false;
 
@@ -94,6 +99,10 @@ impl InspectorWidget {
                     );
                     node_kind = Some(NodeKind::Choice);
                 }
+                DialogueNode::Effect { effect } => {
+                    dirty |= draw_effect_fields(ui, effect, registry);
+                    node_kind = Some(NodeKind::Effect);
+                }
             }
         }
 
@@ -105,6 +114,9 @@ impl InspectorWidget {
                 }
                 NodeKind::Choice => {
                     dirty |= draw_choice_connections(ui, graph, node_state, status, node_id);
+                }
+                NodeKind::Effect => {
+                    draw_text_connections(ui, graph, node_id);
                 }
             }
         }
@@ -339,6 +351,315 @@ fn draw_choice_connections(
     }
 
     dirty
+}
+
+fn draw_effect_fields(
+    ui: &mut Ui,
+    effect: &mut DialogueEffect,
+    registry: Option<&DialogueRegistry>,
+) -> bool {
+    let mut dirty = false;
+
+    ui.heading("Effect");
+
+    if let Some(registry) = registry {
+        let mut keys: Vec<&String> = registry.fields().map(|field| &field.key).collect();
+        keys.sort();
+        let current_key = effect.key.clone();
+        egui::ComboBox::from_id_salt("effect_key")
+            .selected_text(effect.key.as_str())
+            .show_ui(ui, |ui| {
+                for key in keys {
+                    if ui.selectable_label(effect.key == *key, key).clicked() {
+                        effect.key = key.clone();
+                        dirty = true;
+                    }
+                }
+            });
+        if effect.key.is_empty() {
+            effect.key = current_key;
+        }
+    } else {
+        dirty |= ui.text_edit_singleline(&mut effect.key).changed();
+    }
+
+    let field_kind =
+        registry.and_then(|registry| registry.field(&effect.key).map(|f| f.kind.clone()));
+
+    if let Some(kind) = field_kind.as_ref() {
+        dirty |= ensure_value_kind(effect, kind, effect.op);
+    }
+
+    let allowed_ops = allowed_operations(field_kind.as_ref());
+    if !allowed_ops.contains(&effect.op) {
+        effect.op = allowed_ops[0];
+        dirty = true;
+    }
+
+    ui.horizontal(|ui| {
+        ui.label("Operation");
+        egui::ComboBox::from_id_salt("effect_op")
+            .selected_text(format!("{:?}", effect.op))
+            .show_ui(ui, |ui| {
+                for op in allowed_ops {
+                    if ui
+                        .selectable_label(effect.op == op, format!("{:?}", op))
+                        .clicked()
+                    {
+                        effect.op = op;
+                        dirty = true;
+                    }
+                }
+            });
+    });
+
+    ui.separator();
+    ui.label("Value");
+
+    match field_kind.as_ref() {
+        Some(DialogueFieldKind::Bool) => {
+            let mut value = match effect.value {
+                DialogueValue::Bool(v) => v,
+                _ => false,
+            };
+            if ui.checkbox(&mut value, "Enabled").changed() {
+                effect.value = DialogueValue::Bool(value);
+                dirty = true;
+            }
+        }
+        Some(DialogueFieldKind::Int) => {
+            let mut value = match effect.value {
+                DialogueValue::Int(v) => v,
+                _ => 0,
+            };
+            if ui.add(egui::DragValue::new(&mut value)).changed() {
+                effect.value = DialogueValue::Int(value);
+                dirty = true;
+            }
+        }
+        Some(DialogueFieldKind::Float) => {
+            let mut value = match effect.value {
+                DialogueValue::Float(v) => v,
+                _ => 0.0,
+            };
+            if ui
+                .add(egui::DragValue::new(&mut value).speed(0.1))
+                .changed()
+            {
+                effect.value = DialogueValue::Float(value);
+                dirty = true;
+            }
+        }
+        Some(DialogueFieldKind::String) => {
+            let mut value = match effect.value.clone() {
+                DialogueValue::String(v) => v,
+                _ => String::new(),
+            };
+            if ui.text_edit_singleline(&mut value).changed() {
+                effect.value = DialogueValue::String(value);
+                dirty = true;
+            }
+        }
+        Some(DialogueFieldKind::Enum { variants }) => {
+            let mut value = match effect.value.clone() {
+                DialogueValue::Enum(v) => v,
+                _ => variants.first().cloned().unwrap_or_default(),
+            };
+            egui::ComboBox::from_id_salt("effect_enum_value")
+                .selected_text(value.clone())
+                .show_ui(ui, |ui| {
+                    for variant in variants {
+                        if ui.selectable_label(&value == variant, variant).clicked() {
+                            value = variant.clone();
+                        }
+                    }
+                });
+            if value
+                != match &effect.value {
+                    DialogueValue::Enum(v) => v,
+                    _ => "",
+                }
+            {
+                effect.value = DialogueValue::Enum(value);
+                dirty = true;
+            }
+        }
+        Some(DialogueFieldKind::List(inner)) => {
+            dirty |= draw_list_value(ui, effect, inner, effect.op);
+        }
+        Some(DialogueFieldKind::Array { element, len }) => {
+            ui.label(format!("Array length: {len}"));
+            dirty |= draw_list_value(ui, effect, element, DialogueOperation::Set);
+        }
+        None => {
+            ui.label("No registry entry for key. Storing value as string.");
+            let mut value = match effect.value.clone() {
+                DialogueValue::String(v) => v,
+                _ => String::new(),
+            };
+            if ui.text_edit_singleline(&mut value).changed() {
+                effect.value = DialogueValue::String(value);
+                dirty = true;
+            }
+        }
+    }
+
+    dirty
+}
+
+fn draw_list_value(
+    ui: &mut Ui,
+    effect: &mut DialogueEffect,
+    inner: &DialogueFieldKind,
+    op: DialogueOperation,
+) -> bool {
+    let mut dirty = false;
+    if matches!(op, DialogueOperation::Clear) {
+        ui.label("Value not required for clear.");
+        return dirty;
+    }
+
+    if matches!(op, DialogueOperation::Push | DialogueOperation::Remove) {
+        let value_ref = match &mut effect.value {
+            DialogueValue::Bool(_)
+            | DialogueValue::Int(_)
+            | DialogueValue::Float(_)
+            | DialogueValue::String(_)
+            | DialogueValue::Enum(_) => &mut effect.value,
+            _ => {
+                effect.value = default_value_for_kind(inner);
+                &mut effect.value
+            }
+        };
+        dirty |= edit_value(ui, value_ref, inner);
+        return dirty;
+    }
+
+    let DialogueValue::List(ref mut items) = effect.value else {
+        effect.value = DialogueValue::List(Vec::new());
+        return true;
+    };
+
+    let mut remove_index = None;
+
+    for (index, item) in items.iter_mut().enumerate() {
+        ui.push_id(index, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(format!("#{}", index + 1));
+                if edit_value(ui, item, inner) {
+                    dirty = true;
+                }
+                if ui.button("Remove").clicked() {
+                    remove_index = Some(index);
+                }
+            });
+        });
+    }
+
+    if let Some(index) = remove_index {
+        items.remove(index);
+        dirty = true;
+    }
+
+    if ui.button("Add Item").clicked() {
+        items.push(default_value_for_kind(inner));
+        dirty = true;
+    }
+
+    dirty
+}
+
+fn edit_value(ui: &mut Ui, value: &mut DialogueValue, kind: &DialogueFieldKind) -> bool {
+    match (value, kind) {
+        (DialogueValue::Bool(v), DialogueFieldKind::Bool) => ui.checkbox(v, "").changed(),
+        (DialogueValue::Int(v), DialogueFieldKind::Int) => {
+            ui.add(egui::DragValue::new(v)).changed()
+        }
+        (DialogueValue::Float(v), DialogueFieldKind::Float) => {
+            ui.add(egui::DragValue::new(v).speed(0.1)).changed()
+        }
+        (DialogueValue::String(v), DialogueFieldKind::String) => {
+            ui.text_edit_singleline(v).changed()
+        }
+        (DialogueValue::Enum(v), DialogueFieldKind::Enum { variants }) => {
+            let mut changed = false;
+            egui::ComboBox::from_id_salt("effect_list_enum_value")
+                .selected_text(v.clone())
+                .show_ui(ui, |ui| {
+                    for variant in variants {
+                        if ui.selectable_label(&*v == variant, variant).clicked() {
+                            *v = variant.clone();
+                            changed = true;
+                        }
+                    }
+                });
+            changed
+        }
+        _ => false,
+    }
+}
+
+fn ensure_value_kind(
+    effect: &mut DialogueEffect,
+    kind: &DialogueFieldKind,
+    op: DialogueOperation,
+) -> bool {
+    let matches_kind = match (&effect.value, kind) {
+        (DialogueValue::Bool(_), DialogueFieldKind::Bool)
+        | (DialogueValue::Int(_), DialogueFieldKind::Int)
+        | (DialogueValue::Float(_), DialogueFieldKind::Float)
+        | (DialogueValue::String(_), DialogueFieldKind::String)
+        | (DialogueValue::Enum(_), DialogueFieldKind::Enum { .. })
+        | (DialogueValue::List(_), DialogueFieldKind::List(_))
+        | (DialogueValue::List(_), DialogueFieldKind::Array { .. }) => true,
+        _ => false,
+    };
+
+    if !matches_kind {
+        effect.value = default_value_for_kind(kind);
+        return true;
+    }
+
+    if let DialogueFieldKind::List(inner) = kind {
+        if matches!(op, DialogueOperation::Push | DialogueOperation::Remove)
+            && matches!(effect.value, DialogueValue::List(_))
+        {
+            effect.value = default_value_for_kind(inner);
+            return true;
+        }
+    }
+    false
+}
+
+fn default_value_for_kind(kind: &DialogueFieldKind) -> DialogueValue {
+    match kind {
+        DialogueFieldKind::Bool => DialogueValue::Bool(false),
+        DialogueFieldKind::Int => DialogueValue::Int(0),
+        DialogueFieldKind::Float => DialogueValue::Float(0.0),
+        DialogueFieldKind::String => DialogueValue::String(String::new()),
+        DialogueFieldKind::Enum { variants } => {
+            DialogueValue::Enum(variants.first().cloned().unwrap_or_default())
+        }
+        DialogueFieldKind::List(inner) => DialogueValue::List(vec![default_value_for_kind(inner)]),
+        DialogueFieldKind::Array { element, len } => {
+            DialogueValue::List((0..*len).map(|_| default_value_for_kind(element)).collect())
+        }
+    }
+}
+
+fn allowed_operations(kind: Option<&DialogueFieldKind>) -> Vec<DialogueOperation> {
+    match kind {
+        Some(kind) => kind.allowed_operations().to_vec(),
+        None => vec![
+            DialogueOperation::Set,
+            DialogueOperation::Add,
+            DialogueOperation::Subtract,
+            DialogueOperation::Toggle,
+            DialogueOperation::Push,
+            DialogueOperation::Remove,
+            DialogueOperation::Clear,
+        ],
+    }
 }
 
 fn draw_portrait_picker(

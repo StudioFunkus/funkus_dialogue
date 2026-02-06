@@ -42,6 +42,8 @@ pub enum DialogueState {
     Inactive,
     /// Dialogue is displaying text
     ShowingText,
+    /// Dialogue is processing a non-visual effect node
+    ProcessingEffect,
     /// Dialogue is waiting for player to select a choice
     WaitingForChoice,
     /// Player has selected a choice, ready to advance to next node
@@ -62,6 +64,7 @@ impl DialogueState {
         match self {
             DialogueState::Inactive => "Inactive".to_string(),
             DialogueState::ShowingText => "ShowingText".to_string(),
+            DialogueState::ProcessingEffect => "ProcessingEffect".to_string(),
             DialogueState::WaitingForChoice => "WaitingForChoice".to_string(),
             DialogueState::ChoiceSelected(_) => "ChoiceSelected".to_string(),
             DialogueState::Finished => "Finished".to_string(),
@@ -77,7 +80,9 @@ impl DialogueState {
     pub fn can_advance(&self) -> bool {
         matches!(
             self,
-            DialogueState::ShowingText | DialogueState::ChoiceSelected(_)
+            DialogueState::ShowingText
+                | DialogueState::ProcessingEffect
+                | DialogueState::ChoiceSelected(_)
         )
     }
 
@@ -252,6 +257,7 @@ impl DialogueRunner {
         self.state = match start_node {
             DialogueNode::Text { .. } => DialogueState::ShowingText,
             DialogueNode::Choice { .. } => DialogueState::WaitingForChoice,
+            DialogueNode::Effect { .. } => DialogueState::ProcessingEffect,
         };
 
         self.auto_advance_timer.reset();
@@ -319,7 +325,7 @@ impl DialogueRunner {
             .ok_or(DialogueError::NodeNotFound(current_id))?;
 
         match current_node {
-            DialogueNode::Text { .. } => {
+            DialogueNode::Text { .. } | DialogueNode::Effect { .. } => {
                 // Get connections from the graph instead of the node
                 let connections = dialogue.graph.get_connected_nodes(current_id);
 
@@ -339,6 +345,9 @@ impl DialogueRunner {
                     match next_node {
                         DialogueNode::Text { .. } => self.state = DialogueState::ShowingText,
                         DialogueNode::Choice { .. } => self.state = DialogueState::WaitingForChoice,
+                        DialogueNode::Effect { .. } => {
+                            self.state = DialogueState::ProcessingEffect;
+                        }
                     }
                 } else {
                     return Err(DialogueError::NextNodeNotFound(next_id));
@@ -380,6 +389,9 @@ impl DialogueRunner {
                     match next_node {
                         DialogueNode::Text { .. } => self.state = DialogueState::ShowingText,
                         DialogueNode::Choice { .. } => self.state = DialogueState::WaitingForChoice,
+                        DialogueNode::Effect { .. } => {
+                            self.state = DialogueState::ProcessingEffect;
+                        }
                     }
                 } else {
                     return Err(DialogueError::NextNodeNotFound(next_id));

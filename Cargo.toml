@@ -4,6 +4,7 @@ members = [
     "crates/funkus_dialogue_core",
     "crates/funkus_dialogue_ui",
     "crates/funkus_dialogue_editor",
+    "crates/funkus_dialogue_derive",
 ]
 
 [package]

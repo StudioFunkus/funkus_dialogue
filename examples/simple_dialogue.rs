@@ -20,8 +20,10 @@ fn main() {
         DialoguePlugin,
         DialogueUIPlugin,
     ))
+    .register_dialogue_resource::<ExampleState>()
+    .insert_resource(ExampleState::default())
     .add_systems(Startup, setup)
-    .add_systems(Update, keyboard_input);
+    .add_systems(Update, (keyboard_input, update_state_debug_ui));
 
     // Conditionally add the debug plugin if the feature is enabled
     #[cfg(feature = "debug_ui")]
@@ -92,6 +94,23 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         LoadingText,
     ));
 
+    // State debug panel
+    commands.spawn((
+        Text::new("State: (loading)"),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        StateDebugText,
+    ));
+
     // Spawn the dialogue UI
     spawn_dialogue_ui(&mut commands);
 
@@ -102,6 +121,47 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 // Resource to track the dialogue to start
 #[derive(Resource)]
 struct DialogueToStart(Handle<DialogueAsset>);
+
+#[derive(Debug, Clone, Reflect, PartialEq, Eq)]
+enum ExampleItem {
+    Map,
+    Potion,
+    Key,
+}
+
+#[derive(Debug, Clone, Reflect, PartialEq, Eq)]
+enum ExampleMood {
+    Neutral,
+    Happy,
+    Angry,
+}
+
+#[derive(Resource, Reflect, DialogueResource)]
+#[dialogue(key = "game")]
+struct ExampleState {
+    gold: i32,
+    reputation: f32,
+    met_npc: bool,
+    title: String,
+    inventory: Vec<ExampleItem>,
+    mood: ExampleMood,
+}
+
+impl Default for ExampleState {
+    fn default() -> Self {
+        Self {
+            gold: 100,
+            reputation: 0.25,
+            met_npc: false,
+            title: "Stranger".to_string(),
+            inventory: vec![ExampleItem::Map],
+            mood: ExampleMood::Neutral,
+        }
+    }
+}
+
+#[derive(Component)]
+struct StateDebugText;
 
 /// System to handle keyboard input.
 fn keyboard_input(
@@ -216,5 +276,34 @@ fn keyboard_input(
                 }
             }
         }
+    }
+}
+
+fn update_state_debug_ui(
+    state: Res<ExampleState>,
+    mut query: Query<&mut Text, With<StateDebugText>>,
+) {
+    if !state.is_changed() {
+        return;
+    }
+
+    let inventory = if state.inventory.is_empty() {
+        "(empty)".to_string()
+    } else {
+        state
+            .inventory
+            .iter()
+            .map(|item| format!("{item:?}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+
+    let formatted = format!(
+        "State\n- gold: {}\n- reputation: {:.2}\n- met_npc: {}\n- title: {}\n- inventory: {}\n- mood: {:?}",
+        state.gold, state.reputation, state.met_npc, state.title, inventory, state.mood
+    );
+
+    for mut text in &mut query {
+        *text = Text::new(formatted.clone());
     }
 }
