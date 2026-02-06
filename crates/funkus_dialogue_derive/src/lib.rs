@@ -1,7 +1,7 @@
 //! Derive macro for dialogue resource registration.
 
 use proc_macro::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use syn::{DeriveInput, LitStr, parse_macro_input};
 
 #[proc_macro_derive(DialogueResource, attributes(dialogue))]
@@ -9,10 +9,12 @@ pub fn derive_dialogue_resource(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let key = extract_key(&input);
     let ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+    let register_fn = format_ident!("__funkus_dialogue_register_resource_for_{}", ident);
 
     let impl_block = if let Some(key) = key {
         quote! {
-            impl ::funkus_dialogue_core::DialogueResource for #ident {
+            impl #impl_generics ::funkus_dialogue_core::DialogueResource for #ident #ty_generics #where_clause {
                 fn resource_key() -> &'static str {
                     #key
                 }
@@ -20,12 +22,35 @@ pub fn derive_dialogue_resource(input: TokenStream) -> TokenStream {
         }
     } else {
         quote! {
-            impl ::funkus_dialogue_core::DialogueResource for #ident {}
+            impl #impl_generics ::funkus_dialogue_core::DialogueResource for #ident #ty_generics #where_clause {}
+        }
+    };
+
+    let registration_block = if input.generics.params.is_empty() {
+        quote! {
+            #[allow(non_snake_case)]
+            #[doc(hidden)]
+            fn #register_fn(type_registry: &mut ::bevy::reflect::TypeRegistry) {
+                type_registry.register::<#ident #ty_generics>();
+                type_registry
+                    .register_type_data::<#ident #ty_generics, ::funkus_dialogue_core::DialogueResourceTypeData>();
+            }
+
+            ::funkus_dialogue_core::__private::inventory::submit! {
+                ::funkus_dialogue_core::registry::DialogueResourceRegistration::new(#register_fn)
+            }
+        }
+    } else {
+        quote! {
+            compile_error!(
+                "`#[derive(DialogueResource)]` only supports concrete (non-generic) resource types."
+            );
         }
     };
 
     TokenStream::from(quote! {
         #impl_block
+        #registration_block
     })
 }
 

@@ -61,11 +61,11 @@ pub fn update_dialogue_runners(
         if runner.state == DialogueState::ShowingText && runner.auto_advance {
             runner.auto_advance_timer.tick(time.delta());
 
-            if runner.auto_advance_timer.is_finished() {
-                if let Err(err) = runner.advance(dialogue) {
-                    error!("Error advancing dialogue: {}", err);
-                    runner.state = DialogueState::Error(err.to_string());
-                }
+            if runner.auto_advance_timer.is_finished()
+                && let Err(err) = runner.advance(dialogue)
+            {
+                error!("Error advancing dialogue: {}", err);
+                runner.state = DialogueState::Error(err.to_string());
             }
         }
     }
@@ -95,112 +95,95 @@ pub struct DialogueSystemSet;
 #[derive(Resource, Default)]
 struct DialogueEffectCursor(MessageCursor<DialogueNodeActivated>);
 
-/// System for handling dialogue events.
-///
-/// This system processes all dialogue-related events, including:
-/// - Starting dialogues
-/// - Stopping dialogues
-/// - Advancing to the next node
-/// - Selecting choices
-///
-/// It also sends appropriate events to notify other systems about
-/// dialogue state changes.
-///
-/// # System Parameters
-///
-/// * `commands` - Bevy commands for entity management
-/// * `dialogue_assets` - Assets resource containing loaded dialogue assets
-/// * `start_events` - `MessageReader` for `StartDialogue` events
-/// * `stop_events` - `MessageReader` for `StopDialogue` events
-/// * `advance_events` - `MessageReader` for `AdvanceDialogue` events
-/// * `select_events` - `MessageReader` for `SelectDialogueChoice` events
-/// * `node_activated_events` - `MessageWriter` for `DialogueNodeActivated` events
-/// * `dialogue_started_events` - `MessageWriter` for `DialogueStarted` events
-/// * `dialogue_ended_events` - `MessageWriter` for `DialogueEnded` events
-/// * `dialogue_choice_events` - `MessageWriter` for `DialogueChoiceMade` events
-/// * `runner_query` - Query for DialogueRunner components
-pub fn handle_dialogue_events(
-    mut commands: Commands,
+/// Handle dialogue start requests.
+pub fn handle_start_dialogue_events(
     dialogue_assets: Res<Assets<DialogueAsset>>,
     mut start_events: MessageReader<crate::events::StartDialogue>,
-    mut stop_events: MessageReader<crate::events::StopDialogue>,
-    mut advance_events: MessageReader<crate::events::AdvanceDialogue>,
-    mut select_events: MessageReader<crate::events::SelectDialogueChoice>,
     mut node_activated_events: MessageWriter<crate::events::DialogueNodeActivated>,
     mut dialogue_started_events: MessageWriter<crate::events::DialogueStarted>,
-    mut dialogue_ended_events: MessageWriter<crate::events::DialogueEnded>,
-    mut dialogue_choice_events: MessageWriter<crate::events::DialogueChoiceMade>,
     mut runner_query: Query<&mut DialogueRunner>,
 ) {
-    // Handle start dialogue events
     for ev in start_events.read() {
-        if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
-            // Set the dialogue handle
-            runner.dialogue_handle = ev.dialogue_handle.clone();
+        let Ok(mut runner) = runner_query.get_mut(ev.entity) else {
+            warn!(
+                "Ignoring StartDialogue for {:?}: entity has no DialogueRunner",
+                ev.entity
+            );
+            continue;
+        };
 
-            // Get the dialogue asset
-            if let Some(dialogue) = dialogue_assets.get(&ev.dialogue_handle) {
-                match runner.start(dialogue) {
-                    Ok(()) => {
-                        if let Some(node_id) = runner.current_node_id {
-                            node_activated_events.write(crate::events::DialogueNodeActivated {
-                                entity: ev.entity,
-                                node_id,
-                            });
+        runner.dialogue_handle = ev.dialogue_handle.clone();
 
-                            dialogue_started_events.write(crate::events::DialogueStarted {
-                                entity: ev.entity,
-                                start_node_id: node_id,
-                            });
-                        }
-                    }
-                    Err(err) => {
-                        runner.state = DialogueState::Error(err.to_string());
-                        runner.current_node_id = None;
-                        error!("Failed to start dialogue for {:?}: {}", ev.entity, err);
-                    }
+        let Some(dialogue) = dialogue_assets.get(&ev.dialogue_handle) else {
+            warn!(
+                "Ignoring StartDialogue for {:?}: dialogue asset is not loaded yet",
+                ev.entity
+            );
+            continue;
+        };
+
+        match runner.start(dialogue) {
+            Ok(()) => {
+                if let Some(node_id) = runner.current_node_id {
+                    node_activated_events.write(crate::events::DialogueNodeActivated {
+                        entity: ev.entity,
+                        node_id,
+                    });
+
+                    dialogue_started_events.write(crate::events::DialogueStarted {
+                        entity: ev.entity,
+                        start_node_id: node_id,
+                    });
                 }
             }
-        } else {
-            // Create a new dialogue runner component
-            commands
-                .entity(ev.entity)
-                .insert(DialogueRunner::new(ev.dialogue_handle.clone()));
+            Err(err) => {
+                runner.state = DialogueState::Error(err.to_string());
+                runner.current_node_id = None;
+                error!("Failed to start dialogue for {:?}: {}", ev.entity, err);
+            }
         }
     }
+}
 
-    // Handle stop dialogue events
+/// Handle dialogue stop requests.
+pub fn handle_stop_dialogue_events(
+    mut stop_events: MessageReader<crate::events::StopDialogue>,
+    mut dialogue_ended_events: MessageWriter<crate::events::DialogueEnded>,
+    mut runner_query: Query<&mut DialogueRunner>,
+) {
     for ev in stop_events.read() {
         if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
-            // Send dialogue ended event
             dialogue_ended_events.write(crate::events::DialogueEnded {
                 entity: ev.entity,
                 normal_exit: false,
             });
 
-            // Stop the dialogue
             runner.stop();
         }
     }
+}
 
-    // Handle advance dialogue events
+/// Handle dialogue advance requests.
+pub fn handle_advance_dialogue_events(
+    dialogue_assets: Res<Assets<DialogueAsset>>,
+    mut advance_events: MessageReader<crate::events::AdvanceDialogue>,
+    mut node_activated_events: MessageWriter<crate::events::DialogueNodeActivated>,
+    mut dialogue_ended_events: MessageWriter<crate::events::DialogueEnded>,
+    mut runner_query: Query<&mut DialogueRunner>,
+) {
     for ev in advance_events.read() {
         if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
-            // Get the dialogue asset
             if let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) {
                 let old_node_id = runner.current_node_id;
 
-                // Advance the dialogue
                 match runner.advance(dialogue) {
                     Ok(()) => {
                         if runner.state == DialogueState::Finished {
-                            // Send dialogue ended event
                             dialogue_ended_events.write(crate::events::DialogueEnded {
                                 entity: ev.entity,
                                 normal_exit: true,
                             });
                         } else if runner.current_node_id != old_node_id {
-                            // Send node activated event
                             if let Some(node_id) = runner.current_node_id {
                                 node_activated_events.write(crate::events::DialogueNodeActivated {
                                     entity: ev.entity,
@@ -217,25 +200,28 @@ pub fn handle_dialogue_events(
             }
         }
     }
+}
 
-    // Handle select choice events
+/// Handle dialogue choice selection requests.
+pub fn handle_select_dialogue_events(
+    dialogue_assets: Res<Assets<DialogueAsset>>,
+    mut select_events: MessageReader<crate::events::SelectDialogueChoice>,
+    mut dialogue_choice_events: MessageWriter<crate::events::DialogueChoiceMade>,
+    mut runner_query: Query<&mut DialogueRunner>,
+) {
     for ev in select_events.read() {
         if let Ok(mut runner) = runner_query.get_mut(ev.entity) {
-            // Allow choice selection while in either WaitingForChoice or ChoiceSelected state
             if runner.state == DialogueState::WaitingForChoice
                 || matches!(runner.state, DialogueState::ChoiceSelected(_))
             {
-                // Ensure the dialogue asset is available so we can validate the selection
                 let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) else {
                     continue;
                 };
 
-                // Get the current node id
                 let Some(node_id) = runner.current_node_id else {
                     continue;
                 };
 
-                // Validate the requested choice index against available connections
                 let connections = dialogue.graph.get_connected_nodes(node_id);
                 if connections.is_empty() || ev.choice_index >= connections.len() {
                     warn!(
@@ -247,13 +233,11 @@ pub fn handle_dialogue_events(
                     continue;
                 }
 
-                // Select the choice - this now also updates the state to ChoiceSelected
                 if let Err(err) = runner.select_choice(ev.choice_index) {
                     error!("Error selecting choice: {}", err);
                     continue;
                 }
 
-                // Send choice made event
                 dialogue_choice_events.write(crate::events::DialogueChoiceMade {
                     entity: ev.entity,
                     node_id,
@@ -269,7 +253,7 @@ fn apply_dialogue_effects(world: &mut World) {
     let events: Vec<DialogueNodeActivated> =
         world.resource_scope(|world, mut cursor: Mut<DialogueEffectCursor>| {
             let messages = world.resource::<Messages<DialogueNodeActivated>>();
-            cursor.0.read(&messages).cloned().collect()
+            cursor.0.read(messages).cloned().collect()
         });
 
     if events.is_empty() {
@@ -354,15 +338,260 @@ fn apply_dialogue_effects(world: &mut World) {
 /// }
 /// ```
 pub fn setup_dialogue_systems(app: &mut App) {
-    app.configure_sets(Update, DialogueSystemSet).add_systems(
-        Update,
-        (
-            update_dialogue_runners,
-            handle_dialogue_events,
-            apply_dialogue_effects,
+    app.configure_sets(Update, DialogueSystemSet)
+        .configure_sets(PostUpdate, DialogueSystemSet)
+        .add_systems(
+            Update,
+            (
+                update_dialogue_runners,
+                handle_stop_dialogue_events,
+                handle_advance_dialogue_events,
+                handle_select_dialogue_events,
+            )
+                .chain()
+                .in_set(DialogueSystemSet),
         )
-            .chain()
-            .in_set(DialogueSystemSet),
-    );
+        .add_systems(
+            PostUpdate,
+            (handle_start_dialogue_events, apply_dialogue_effects)
+                .chain()
+                .in_set(DialogueSystemSet),
+        );
     app.init_resource::<DialogueEffectCursor>();
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::ecs::message::{MessageCursor, Messages};
+    use bevy::prelude::*;
+
+    use crate::asset::DialogueAsset;
+    use crate::events::{
+        AdvanceDialogue, DialogueChoiceMade, DialogueEnded, DialogueNodeActivated, DialogueStarted,
+        SelectDialogueChoice, StartDialogue, StopDialogue,
+    };
+    use crate::graph::{ConnectionData, DialogueGraph, DialogueNode};
+    use crate::registry::{DialogueEffect, DialogueOperation, DialogueRegistry, DialogueValue};
+    use crate::runtime::{DialogueRunner, setup_dialogue_systems};
+
+    #[derive(Resource, Reflect, crate::DialogueResource, Default)]
+    #[dialogue(key = "runtime_test")]
+    struct RuntimeTestState {
+        value: i32,
+    }
+
+    #[derive(Resource)]
+    struct DeferredStartHandle(Handle<DialogueAsset>);
+
+    #[derive(Resource, Default)]
+    struct DeferredStartSent(bool);
+
+    fn queue_start_with_deferred_spawn(
+        mut commands: Commands,
+        mut sent: ResMut<DeferredStartSent>,
+        handle: Res<DeferredStartHandle>,
+        mut start_events: MessageWriter<StartDialogue>,
+    ) {
+        if sent.0 {
+            return;
+        }
+        sent.0 = true;
+
+        let entity = commands
+            .spawn((
+                Name::new("Deferred Start Runner"),
+                DialogueRunner::default(),
+            ))
+            .id();
+        start_events.write(StartDialogue {
+            entity,
+            dialogue_handle: handle.0.clone(),
+        });
+    }
+
+    fn init_runtime_test_app() -> App {
+        let mut app = App::new();
+        app.init_resource::<Assets<DialogueAsset>>()
+            .init_resource::<Time>()
+            .init_resource::<DialogueRegistry>()
+            .init_resource::<AppTypeRegistry>()
+            .add_message::<DialogueStarted>()
+            .add_message::<DialogueEnded>()
+            .add_message::<DialogueNodeActivated>()
+            .add_message::<DialogueChoiceMade>()
+            .add_message::<AdvanceDialogue>()
+            .add_message::<SelectDialogueChoice>()
+            .add_message::<StartDialogue>()
+            .add_message::<StopDialogue>();
+        setup_dialogue_systems(&mut app);
+        app
+    }
+
+    #[test]
+    fn start_and_advance_emit_node_activated_messages() {
+        let mut app = init_runtime_test_app();
+
+        let mut graph = DialogueGraph::new();
+        let start = graph.add_node(DialogueNode::text("Start"));
+        let next = graph.add_node(DialogueNode::text("Next"));
+        graph
+            .connect(start, next, ConnectionData::new(None))
+            .expect("connect test nodes");
+        graph.set_start_node(start).expect("set start");
+
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<DialogueAsset>>()
+            .add(DialogueAsset::new(graph));
+
+        let entity = app.world_mut().spawn(DialogueRunner::default()).id();
+        app.world_mut()
+            .resource_mut::<Messages<StartDialogue>>()
+            .write(StartDialogue {
+                entity,
+                dialogue_handle: handle,
+            });
+
+        let mut activated_cursor = MessageCursor::<DialogueNodeActivated>::default();
+
+        app.update();
+        let activated_on_start: Vec<DialogueNodeActivated> = {
+            let messages = app.world().resource::<Messages<DialogueNodeActivated>>();
+            activated_cursor.read(messages).cloned().collect()
+        };
+        assert_eq!(activated_on_start.len(), 1);
+        assert_eq!(activated_on_start[0].entity, entity);
+        assert_eq!(activated_on_start[0].node_id, start);
+
+        app.world_mut()
+            .resource_mut::<Messages<AdvanceDialogue>>()
+            .write(AdvanceDialogue { entity });
+        app.update();
+
+        let activated_on_advance: Vec<DialogueNodeActivated> = {
+            let messages = app.world().resource::<Messages<DialogueNodeActivated>>();
+            activated_cursor.read(messages).cloned().collect()
+        };
+        assert_eq!(activated_on_advance.len(), 1);
+        assert_eq!(activated_on_advance[0].entity, entity);
+        assert_eq!(activated_on_advance[0].node_id, next);
+    }
+
+    #[test]
+    fn effect_nodes_mutate_registered_resources_and_queue_advance() {
+        let mut app = init_runtime_test_app();
+        app.insert_resource(RuntimeTestState { value: 2 });
+
+        {
+            let app_type_registry = app.world_mut().resource_mut::<AppTypeRegistry>();
+            let mut type_registry = app_type_registry.write();
+            type_registry.register::<RuntimeTestState>();
+        }
+
+        app.world_mut()
+            .resource_mut::<DialogueRegistry>()
+            .register_reflected_resource(
+                <RuntimeTestState as bevy::reflect::Typed>::type_info(),
+                <RuntimeTestState as crate::registry::DialogueResource>::resource_key(),
+            );
+
+        let mut graph = DialogueGraph::new();
+        let start = graph.add_node(DialogueNode::effect(DialogueEffect {
+            key: "runtime_test.value".to_string(),
+            op: DialogueOperation::Add,
+            value: DialogueValue::Int(5),
+        }));
+        graph.set_start_node(start).expect("set start");
+
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<DialogueAsset>>()
+            .add(DialogueAsset::new(graph));
+        let entity = app.world_mut().spawn(DialogueRunner::default()).id();
+
+        app.world_mut()
+            .resource_mut::<Messages<StartDialogue>>()
+            .write(StartDialogue {
+                entity,
+                dialogue_handle: handle,
+            });
+
+        app.update();
+
+        assert_eq!(app.world().resource::<RuntimeTestState>().value, 7);
+
+        let mut advance_cursor = MessageCursor::<AdvanceDialogue>::default();
+        let advances: Vec<AdvanceDialogue> = {
+            let messages = app.world().resource::<Messages<AdvanceDialogue>>();
+            advance_cursor.read(messages).cloned().collect()
+        };
+        assert_eq!(advances.len(), 1);
+        assert_eq!(advances[0].entity, entity);
+    }
+
+    #[test]
+    fn unknown_effect_keys_do_not_mutate_resources_or_auto_advance() {
+        let mut app = init_runtime_test_app();
+        app.insert_resource(RuntimeTestState { value: 10 });
+
+        let mut graph = DialogueGraph::new();
+        let start = graph.add_node(DialogueNode::effect(DialogueEffect {
+            key: "runtime_test.missing".to_string(),
+            op: DialogueOperation::Set,
+            value: DialogueValue::Int(99),
+        }));
+        graph.set_start_node(start).expect("set start");
+
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<DialogueAsset>>()
+            .add(DialogueAsset::new(graph));
+        let entity = app.world_mut().spawn(DialogueRunner::default()).id();
+
+        app.world_mut()
+            .resource_mut::<Messages<StartDialogue>>()
+            .write(StartDialogue {
+                entity,
+                dialogue_handle: handle,
+            });
+
+        app.update();
+
+        assert_eq!(app.world().resource::<RuntimeTestState>().value, 10);
+
+        let mut advance_cursor = MessageCursor::<AdvanceDialogue>::default();
+        let advances: Vec<AdvanceDialogue> = {
+            let messages = app.world().resource::<Messages<AdvanceDialogue>>();
+            advance_cursor.read(messages).cloned().collect()
+        };
+        assert!(advances.is_empty());
+    }
+
+    #[test]
+    fn start_dialogue_from_deferred_spawn_starts_in_same_frame() {
+        let mut app = init_runtime_test_app();
+
+        let mut graph = DialogueGraph::new();
+        let start = graph.add_node(DialogueNode::text("Start"));
+        graph.set_start_node(start).expect("set start");
+
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<DialogueAsset>>()
+            .add(DialogueAsset::new(graph));
+
+        app.insert_resource(DeferredStartHandle(handle));
+        app.init_resource::<DeferredStartSent>();
+        app.add_systems(Update, queue_start_with_deferred_spawn);
+
+        let mut started_cursor = MessageCursor::<DialogueStarted>::default();
+
+        app.update();
+        let started_after_first_update: Vec<DialogueStarted> = {
+            let messages = app.world().resource::<Messages<DialogueStarted>>();
+            started_cursor.read(messages).cloned().collect()
+        };
+        assert_eq!(started_after_first_update.len(), 1);
+        assert_eq!(started_after_first_update[0].start_node_id, start);
+    }
 }

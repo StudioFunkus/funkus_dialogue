@@ -92,12 +92,12 @@ App::new()
 
 ## Registry-backed fields
 
-If you register dialogue resources, the editor will surface them in effect nodes
+If you derive `DialogueResource` on reflected resources, the editor will surface them in effect nodes
 as selectable keys with typed inputs.
 
 ```rust,ignore
 use bevy::prelude::*;
-use funkus_dialogue_core::{DialoguePlugin, DialogueRegistryAppExt, DialogueResource};
+use funkus_dialogue_core::{DialoguePlugin, DialogueResource};
 
 #[derive(Resource, Reflect, DialogueResource)]
 #[dialogue(key = "game")]
@@ -108,7 +108,6 @@ struct GameState {
 
 App::new()
     .add_plugins(DialoguePlugin)
-    .register_dialogue_resource::<GameState>()
     .insert_resource(GameState { gold: 0, met_npc: false })
     .add_plugins(DialogueEditorPlugin::default())
     .run();

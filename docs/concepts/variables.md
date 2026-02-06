@@ -8,7 +8,7 @@ by key inside dialogue assets.
 
 ```rust,ignore
 use bevy::prelude::*;
-use funkus_dialogue_core::{DialoguePlugin, DialogueRegistryAppExt, DialogueResource};
+use funkus_dialogue_core::{DialoguePlugin, DialogueResource};
 
 #[derive(Resource, Reflect, DialogueResource)]
 #[dialogue(key = "game")]
@@ -20,7 +20,6 @@ struct GameState {
 fn main() {
     App::new()
         .add_plugins(DialoguePlugin)
-        .register_dialogue_resource::<GameState>()
         .insert_resource(GameState { gold: 0, met_npc: false })
         .run();
 }

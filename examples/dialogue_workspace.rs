@@ -78,7 +78,6 @@ fn main() {
             DialogueUIPlugin,
             DialogueEditorPlugin::default(),
         ))
-        .register_dialogue_resource::<ExampleState>()
         .insert_resource(ExampleState::default())
         .init_resource::<PreviewContext>()
         .init_resource::<PreviewRequest>()

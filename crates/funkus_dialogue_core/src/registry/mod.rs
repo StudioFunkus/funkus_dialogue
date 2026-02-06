@@ -19,8 +19,9 @@ pub use value::{DialogueEffect, DialogueOperation, DialogueValue, DialogueValueK
 
 /// Marker trait for resources that should be included in the dialogue registry.
 ///
-/// Register types with [`register_dialogue_resource`](DialogueRegistryAppExt::register_dialogue_resource)
-/// to make them available at runtime and in the editor.
+/// Derive `DialogueResource` on your reflected resource type to make it available
+/// at runtime and in the editor. The dialogue plugin auto-registers derived
+/// resource metadata at startup.
 pub trait DialogueResource: Resource + Reflect + TypePath {
     /// Override the registry prefix for this resource.
     ///
@@ -54,6 +55,21 @@ impl<T: DialogueResource> bevy::reflect::FromType<T> for DialogueResourceTypeDat
         Self::new(T::resource_key())
     }
 }
+
+#[doc(hidden)]
+pub struct DialogueResourceRegistration {
+    register: fn(&mut bevy::reflect::TypeRegistry),
+}
+
+impl DialogueResourceRegistration {
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn new(register: fn(&mut bevy::reflect::TypeRegistry)) -> Self {
+        Self { register }
+    }
+}
+
+inventory::collect!(DialogueResourceRegistration);
 
 /// Describes the expected type of a registry field.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -287,8 +303,21 @@ pub struct DialogueRegistryPlugin;
 
 impl Plugin for DialogueRegistryPlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<DialogueRegistry>()
-            .add_systems(Startup, build_registry_from_reflection);
+        app.init_resource::<DialogueRegistry>().add_systems(
+            Startup,
+            (
+                register_dialogue_resources_from_derive,
+                build_registry_from_reflection,
+            )
+                .chain(),
+        );
+    }
+}
+
+fn register_dialogue_resources_from_derive(app_registry: ResMut<AppTypeRegistry>) {
+    let mut type_registry = app_registry.write();
+    for registration in inventory::iter::<DialogueResourceRegistration> {
+        (registration.register)(&mut type_registry);
     }
 }
 
@@ -302,24 +331,6 @@ fn build_registry_from_reflection(
             continue;
         };
         registry.register_reflected_resource(registration.type_info(), marker.resource_key());
-    }
-}
-
-/// App extension for registering dialogue resources.
-pub trait DialogueRegistryAppExt {
-    /// Registers a resource type for dialogue reflection.
-    fn register_dialogue_resource<T: DialogueResource + bevy::reflect::GetTypeRegistration>(
-        &mut self,
-    ) -> &mut Self;
-}
-
-impl DialogueRegistryAppExt for App {
-    fn register_dialogue_resource<T: DialogueResource + bevy::reflect::GetTypeRegistration>(
-        &mut self,
-    ) -> &mut Self {
-        self.register_type::<T>()
-            .register_type_data::<T, DialogueResourceTypeData>();
-        self
     }
 }
 
@@ -766,5 +777,30 @@ fn value_to_reflect(
             )))
         }
         _ => Err(DialogueRegistryError::TypeMismatch("value".to_string())),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bevy::prelude::*;
+
+    use super::{DialogueRegistry, DialogueRegistryPlugin};
+
+    #[derive(Resource, Reflect, crate::DialogueResource)]
+    #[dialogue(key = "auto_registry")]
+    struct AutoRegistryState {
+        gold: i32,
+        met_npc: bool,
+    }
+
+    #[test]
+    fn plugin_auto_registers_derived_dialogue_resources() {
+        let mut app = App::new();
+        app.add_plugins(DialogueRegistryPlugin);
+        app.update();
+
+        let registry = app.world().resource::<DialogueRegistry>();
+        assert!(registry.field("auto_registry.gold").is_some());
+        assert!(registry.field("auto_registry.met_npc").is_some());
     }
 }

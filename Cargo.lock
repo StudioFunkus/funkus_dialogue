@@ -2688,6 +2688,7 @@ dependencies = [
  "bevy_common_assets",
  "bevy_egui",
  "funkus_dialogue_derive",
+ "inventory",
  "petgraph 0.7.1",
  "serde",
  "serde_json",

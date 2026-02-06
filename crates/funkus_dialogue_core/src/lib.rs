@@ -77,6 +77,8 @@
 
 use bevy::prelude::*;
 
+extern crate self as funkus_dialogue_core;
+
 // Module declarations
 mod asset;
 mod error;
@@ -101,10 +103,15 @@ pub use events::{
 pub use funkus_dialogue_derive::DialogueResource;
 pub use graph::{Connection, DialogueGraph, DialogueNode, NodeId};
 pub use registry::{
-    DialogueEffect, DialogueOperation, DialogueRegistry, DialogueRegistryAppExt,
-    DialogueRegistryPlugin, DialogueResource, DialogueResourceTypeData, DialogueValue,
+    DialogueEffect, DialogueOperation, DialogueRegistry, DialogueRegistryPlugin, DialogueResource,
+    DialogueResourceTypeData, DialogueValue,
 };
 pub use runtime::{DialogueRunner, DialogueState};
+
+#[doc(hidden)]
+pub mod __private {
+    pub use inventory;
+}
 
 /// Plugin that sets up the dialogue system components, assets, and systems.
 ///

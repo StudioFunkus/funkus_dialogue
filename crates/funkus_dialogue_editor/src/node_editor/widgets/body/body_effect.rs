@@ -12,7 +12,6 @@ impl EffectBodyWidget {
     pub fn show(&mut self, ui: &mut Ui, effect: &DialogueEffect, body_width: f32) {
         ui.vertical(|ui| {
             ui.set_width(body_width);
-            ui.label(RichText::new("Effect Node").strong());
             ui.add_sized(
                 [body_width, 0.0],
                 egui::Label::new(RichText::new(format!("Key: {}", effect.key)).small()).wrap(),

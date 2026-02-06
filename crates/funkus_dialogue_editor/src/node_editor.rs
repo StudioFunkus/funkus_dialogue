@@ -496,10 +496,16 @@ struct OutputLabel {
 impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
     fn title(&mut self, node: &DialogueNodeView) -> String {
         match self.node_kind(node.graph_id) {
-            Some(DialogueNode::Text { .. }) => format!("Text {}", node.graph_id.raw()),
-            Some(DialogueNode::Choice { .. }) => format!("Choice {}", node.graph_id.raw()),
-            Some(DialogueNode::Effect { .. }) => format!("Effect {}", node.graph_id.raw()),
-            None => format!("Missing {}", node.graph_id.raw()),
+            Some(DialogueNode::Text { .. }) => {
+                format!("Node #{} (Text)", node.graph_id.raw())
+            }
+            Some(DialogueNode::Choice { .. }) => {
+                format!("Node #{} (Choice)", node.graph_id.raw())
+            }
+            Some(DialogueNode::Effect { .. }) => {
+                format!("Node #{} (Effect)", node.graph_id.raw())
+            }
+            None => format!("Node #{} (Missing)", node.graph_id.raw()),
         }
     }
 

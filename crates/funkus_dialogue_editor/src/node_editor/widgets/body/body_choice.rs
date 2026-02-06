@@ -21,7 +21,6 @@ impl ChoiceBodyWidget {
     ) {
         ui.vertical(|ui| {
             ui.set_width(body_width);
-            ui.label(RichText::new("Choice Node").strong());
             if let Some(speaker_name) = speaker {
                 ui.add_sized(
                     [body_width, 0.0],

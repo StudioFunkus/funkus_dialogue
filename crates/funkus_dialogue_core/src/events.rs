@@ -295,7 +295,7 @@ pub struct SelectDialogueChoice {
 /// Event to request starting a dialogue.
 ///
 /// Send this event to start a dialogue on an entity.
-/// The entity should have a DialogueRunner component, or one will be added.
+/// The entity must already have a DialogueRunner component when this event is handled.
 ///
 /// # Fields
 ///
