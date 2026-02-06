@@ -90,7 +90,7 @@ mod runtime;
 mod debug;
 
 // Re-exports for public API
-pub use asset::DialogueAsset;
+pub use asset::{DialogueAsset, DialogueEditorMetadata, DialogueEditorNodeMetadata};
 #[cfg(feature = "debug_ui")]
 pub use debug::DialogueDebugPlugin;
 pub use error::{DialogueError, DialogueResult};

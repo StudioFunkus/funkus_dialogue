@@ -33,5 +33,7 @@
 //! ```
 
 mod dialogue_asset;
+mod editor_metadata;
 
 pub use dialogue_asset::*;
+pub use editor_metadata::*;

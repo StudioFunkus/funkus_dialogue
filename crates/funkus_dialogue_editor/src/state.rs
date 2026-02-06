@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 use bevy::prelude::{Message, MessageReader};
+use funkus_dialogue_core::DialogueEditorMetadata;
 use funkus_dialogue_core::graph::DialogueGraph;
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -40,7 +41,7 @@ pub struct OpenDialogue {
 impl OpenDialogue {
     #[must_use]
     pub fn new(display_name: impl Into<String>, graph: DialogueGraph) -> Self {
-        let node_editor = DialogueNodeEditorState::from_graph(&graph);
+        let node_editor = DialogueNodeEditorState::from_graph_with_layout(&graph, None);
         Self {
             display_name: display_name.into(),
             graph,
@@ -51,12 +52,16 @@ impl OpenDialogue {
     }
 
     #[must_use]
-    pub fn from_loaded_graph(path: PathBuf, graph: DialogueGraph) -> Self {
+    pub fn from_loaded_graph(
+        path: PathBuf,
+        graph: DialogueGraph,
+        editor: Option<DialogueEditorMetadata>,
+    ) -> Self {
         let display_name = graph
             .name
             .clone()
             .unwrap_or_else(|| display_name_for_path(&path));
-        let node_editor = DialogueNodeEditorState::from_graph(&graph);
+        let node_editor = DialogueNodeEditorState::from_graph_with_layout(&graph, editor.as_ref());
 
         Self {
             display_name,

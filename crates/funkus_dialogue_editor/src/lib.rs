@@ -12,9 +12,9 @@ use bevy_egui::{
     EguiContext, EguiContextSettings, EguiPlugin, EguiPreUpdateSet, EguiPrimaryContextPass,
     EguiUserTextures, PrimaryEguiContext, egui,
 };
-use funkus_dialogue_core::DialogueAsset;
 use funkus_dialogue_core::graph::DialogueGraph;
 use funkus_dialogue_core::registry::DialogueRegistry;
+use funkus_dialogue_core::{DialogueAsset, DialogueEditorMetadata};
 use ron::ser::PrettyConfig;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -103,7 +103,9 @@ enum DialogueIoError {
     MissingSaveDestination,
 }
 
-fn load_dialogue_from_disk(path: &Path) -> Result<DialogueGraph, DialogueIoError> {
+fn load_dialogue_from_disk(
+    path: &Path,
+) -> Result<(DialogueGraph, Option<DialogueEditorMetadata>), DialogueIoError> {
     let format = DialogueFileFormat::detect(path);
     let bytes = fs::read(path).map_err(|source| DialogueIoError::Read {
         path: path.to_path_buf(),
@@ -112,27 +114,31 @@ fn load_dialogue_from_disk(path: &Path) -> Result<DialogueGraph, DialogueIoError
 
     match format {
         DialogueFileFormat::Json => match serde_json::from_slice::<DialogueAsset>(&bytes) {
-            Ok(asset) => Ok(asset.graph),
-            Err(asset_err) => serde_json::from_slice::<DialogueGraph>(&bytes).map_err(|_| {
-                DialogueIoError::ParseJson {
+            Ok(asset) => Ok((asset.graph, asset.editor)),
+            Err(asset_err) => serde_json::from_slice::<DialogueGraph>(&bytes)
+                .map(|graph| (graph, None))
+                .map_err(|_| DialogueIoError::ParseJson {
                     path: path.to_path_buf(),
                     source: asset_err,
-                }
-            }),
+                }),
         },
         DialogueFileFormat::Ron => match ron::de::from_bytes::<DialogueAsset>(&bytes) {
-            Ok(asset) => Ok(asset.graph),
-            Err(asset_err) => ron::de::from_bytes::<DialogueGraph>(&bytes).map_err(|_| {
-                DialogueIoError::ParseRon {
+            Ok(asset) => Ok((asset.graph, asset.editor)),
+            Err(asset_err) => ron::de::from_bytes::<DialogueGraph>(&bytes)
+                .map(|graph| (graph, None))
+                .map_err(|_| DialogueIoError::ParseRon {
                     path: path.to_path_buf(),
                     source: asset_err,
-                }
-            }),
+                }),
         },
     }
 }
 
-fn save_dialogue_to_disk(graph: &DialogueGraph, path: &Path) -> Result<(), DialogueIoError> {
+fn save_dialogue_to_disk(
+    graph: &DialogueGraph,
+    editor: Option<DialogueEditorMetadata>,
+    path: &Path,
+) -> Result<(), DialogueIoError> {
     let format = DialogueFileFormat::detect(path);
 
     if let Some(parent) = path
@@ -147,7 +153,8 @@ fn save_dialogue_to_disk(graph: &DialogueGraph, path: &Path) -> Result<(), Dialo
 
     match format {
         DialogueFileFormat::Json => {
-            let asset = DialogueAsset::new(graph.clone());
+            let mut asset = DialogueAsset::new(graph.clone());
+            asset.editor = editor;
             let data = serde_json::to_vec_pretty(&asset).map_err(|source| {
                 DialogueIoError::SerializeJson {
                     path: path.to_path_buf(),
@@ -161,7 +168,8 @@ fn save_dialogue_to_disk(graph: &DialogueGraph, path: &Path) -> Result<(), Dialo
         }
         DialogueFileFormat::Ron => {
             let config = PrettyConfig::new();
-            let asset = DialogueAsset::new(graph.clone());
+            let mut asset = DialogueAsset::new(graph.clone());
+            asset.editor = editor;
             let data = ron::ser::to_string_pretty(&asset, config).map_err(|source| {
                 DialogueIoError::SerializeRon {
                     path: path.to_path_buf(),
@@ -386,9 +394,9 @@ fn handle_editor_io_commands(
                 }
 
                 match load_dialogue_from_disk(&resolved_path) {
-                    Ok(graph) => {
+                    Ok((graph, editor)) => {
                         let dialogue =
-                            OpenDialogue::from_loaded_graph(relative_path.clone(), graph);
+                            OpenDialogue::from_loaded_graph(relative_path.clone(), graph, editor);
                         workspace.open_dialogue(dialogue);
                         asset_browser.select_path(&relative_path);
                         asset_browser.mark_needs_refresh();
@@ -412,7 +420,9 @@ fn handle_editor_io_commands(
                         Some(path) => {
                             let absolute = asset_browser.to_absolute_dialogue_path(&path);
                             let format = DialogueFileFormat::detect(&absolute);
-                            match save_dialogue_to_disk(&dialogue.graph, &absolute) {
+                            let editor = dialogue.node_editor.editor_metadata();
+                            let editor = (!editor.nodes.is_empty()).then_some(editor);
+                            match save_dialogue_to_disk(&dialogue.graph, editor, &absolute) {
                                 Ok(()) => {
                                     let stored = asset_browser.relative_path_if_within(&absolute);
                                     dialogue.set_source_path(stored.clone());

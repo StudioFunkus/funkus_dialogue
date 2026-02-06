@@ -9,6 +9,7 @@ use bevy_egui::egui::{self, Color32, Pos2, RichText, Stroke, Ui, Vec2, pos2, vec
 use egui_snarl::ui::{PinInfo, PinPlacement, SnarlPin, SnarlStyle, SnarlViewer, SnarlWidget};
 use egui_snarl::{InPin, InPinId, NodeId as SnarlNodeId, OutPin, OutPinId, Snarl};
 use funkus_dialogue_core::graph::{ConnectionData, DialogueGraph, DialogueNode, NodeId};
+use funkus_dialogue_core::{DialogueEditorMetadata, DialogueEditorNodeMetadata};
 
 const NODE_GRID_COLUMNS: usize = 4;
 const NODE_GRID_SPACING: Vec2 = vec2(280.0, 180.0);
@@ -39,6 +40,16 @@ pub struct DialogueNodeEditorState {
 impl DialogueNodeEditorState {
     #[must_use]
     pub fn from_graph(graph: &DialogueGraph) -> Self {
+        Self::from_graph_with_layout(graph, None)
+    }
+
+    /// Builds editor interaction state from a dialogue graph, applying persisted layout metadata
+    /// if available.
+    #[must_use]
+    pub fn from_graph_with_layout(
+        graph: &DialogueGraph,
+        layout: Option<&DialogueEditorMetadata>,
+    ) -> Self {
         let mut state = Self {
             snarl: Snarl::new(),
             graph_to_snarl: HashMap::new(),
@@ -46,11 +57,15 @@ impl DialogueNodeEditorState {
             selected_nodes: Vec::new(),
             pending_selection: None,
         };
-        state.rebuild_from_graph(graph);
+        state.rebuild_from_graph(graph, layout);
         state
     }
 
-    pub fn rebuild_from_graph(&mut self, graph: &DialogueGraph) {
+    pub fn rebuild_from_graph(
+        &mut self,
+        graph: &DialogueGraph,
+        layout: Option<&DialogueEditorMetadata>,
+    ) {
         self.snarl = Snarl::new();
         self.graph_to_snarl.clear();
         self.selected_nodes.clear();
@@ -60,10 +75,19 @@ impl DialogueNodeEditorState {
         ids.sort_by_key(|id| id.raw());
 
         for (index, id) in ids.iter().enumerate() {
-            let pos = Self::grid_position(index);
-            let snarl_id = self
-                .snarl
-                .insert_node(pos, DialogueNodeView { graph_id: *id });
+            let entry = layout.and_then(|layout| layout.node(*id)).copied();
+            let (pos, collapsed) = entry.map_or_else(
+                || (Self::grid_position(index), false),
+                |entry| (pos2(entry.pos[0], entry.pos[1]), entry.collapsed),
+            );
+
+            let snarl_id = if collapsed {
+                self.snarl
+                    .insert_node_collapsed(pos, DialogueNodeView { graph_id: *id })
+            } else {
+                self.snarl
+                    .insert_node(pos, DialogueNodeView { graph_id: *id })
+            };
             self.graph_to_snarl.insert(*id, snarl_id);
         }
 
@@ -166,6 +190,25 @@ impl DialogueNodeEditorState {
 
     pub fn drop_selection(&mut self, id: NodeId) {
         self.selected_nodes.retain(|existing| *existing != id);
+    }
+
+    /// Builds tooling-only metadata describing node layout (position + collapsed state).
+    #[must_use]
+    pub fn editor_metadata(&self) -> DialogueEditorMetadata {
+        let mut nodes: Vec<DialogueEditorNodeMetadata> = self
+            .graph_to_snarl
+            .iter()
+            .filter_map(|(&graph_id, &snarl_id)| {
+                let info = self.snarl.get_node_info(snarl_id)?;
+                Some(DialogueEditorNodeMetadata {
+                    id: graph_id,
+                    pos: [info.pos.x, info.pos.y],
+                    collapsed: !info.open,
+                })
+            })
+            .collect();
+        nodes.sort_by_key(|entry| entry.id.raw());
+        DialogueEditorMetadata { nodes }
     }
 
     pub fn split_mut(
@@ -846,4 +889,69 @@ fn snippet(text: &str, max_len: usize) -> String {
 
 fn truncate_label(text: &str, max_len: usize) -> String {
     snippet(text, max_len)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn layout_metadata_is_applied_when_building_snarl() {
+        let mut graph = DialogueGraph::new();
+        let node_id = graph.add_node(DialogueNode::text("Hello"));
+
+        let layout = DialogueEditorMetadata {
+            nodes: vec![DialogueEditorNodeMetadata {
+                id: node_id,
+                pos: [100.0, 200.0],
+                collapsed: true,
+            }],
+        };
+
+        let state = DialogueNodeEditorState::from_graph_with_layout(&graph, Some(&layout));
+
+        let snarl_id = state
+            .snarl
+            .node_ids()
+            .find_map(|(snarl_id, view)| (view.graph_id == node_id).then_some(snarl_id))
+            .expect("snarl node exists for graph node");
+
+        let info = state
+            .snarl
+            .get_node_info(snarl_id)
+            .expect("snarl node info exists");
+
+        assert_eq!(info.pos.x, 100.0);
+        assert_eq!(info.pos.y, 200.0);
+        assert!(!info.open, "collapsed nodes should be inserted closed");
+    }
+
+    #[test]
+    fn editor_metadata_is_extracted_from_snarl_state() {
+        let mut graph = DialogueGraph::new();
+        let node_id = graph.add_node(DialogueNode::text("Hello"));
+        let mut state = DialogueNodeEditorState::from_graph(&graph);
+
+        let snarl_id = state
+            .snarl
+            .node_ids()
+            .find_map(|(snarl_id, view)| (view.graph_id == node_id).then_some(snarl_id))
+            .expect("snarl node exists for graph node");
+
+        let info = state
+            .snarl
+            .get_node_info_mut(snarl_id)
+            .expect("snarl node info exists");
+        info.pos = pos2(42.0, 77.0);
+        info.open = true;
+
+        let meta = state.editor_metadata();
+        let entry = meta
+            .node(node_id)
+            .copied()
+            .expect("metadata contains entry for node");
+
+        assert_eq!(entry.pos, [42.0, 77.0]);
+        assert!(!entry.collapsed);
+    }
 }

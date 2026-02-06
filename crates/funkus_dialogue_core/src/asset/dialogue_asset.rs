@@ -2,6 +2,7 @@
 //!
 //! This module defines the core asset type for dialogue data.
 
+use crate::asset::DialogueEditorMetadata;
 use crate::graph::DialogueGraph;
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -74,6 +75,11 @@ pub struct DialogueAsset {
     pub graph: DialogueGraph,
     /// Optional name to identify this dialogue
     pub name: Option<String>,
+    /// Optional editor-only metadata (node layout, etc.).
+    ///
+    /// This is safe to ignore for runtime purposes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub editor: Option<DialogueEditorMetadata>,
 }
 
 impl DialogueAsset {
@@ -102,6 +108,43 @@ impl DialogueAsset {
     /// ```
     pub fn new(graph: DialogueGraph) -> Self {
         let name = graph.name.clone();
-        Self { graph, name }
+        Self {
+            graph,
+            name,
+            editor: None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::graph::DialogueNode;
+
+    #[test]
+    fn dialogue_asset_round_trips_editor_metadata_json() {
+        let mut graph = DialogueGraph::new().with_name("Test Dialogue");
+        let id = graph.add_node(DialogueNode::text("Hello"));
+
+        let editor = DialogueEditorMetadata {
+            nodes: vec![crate::asset::DialogueEditorNodeMetadata {
+                id,
+                pos: [12.5, 34.25],
+                collapsed: true,
+            }],
+        };
+
+        let mut asset = DialogueAsset::new(graph);
+        asset.editor = Some(editor);
+
+        let json = serde_json::to_string_pretty(&asset).expect("serialize DialogueAsset");
+        let decoded: DialogueAsset =
+            serde_json::from_str(&json).expect("deserialize DialogueAsset");
+
+        let decoded_editor = decoded.editor.expect("editor metadata should exist");
+        assert_eq!(decoded_editor.nodes.len(), 1);
+        assert_eq!(decoded_editor.nodes[0].id, id);
+        assert_eq!(decoded_editor.nodes[0].pos, [12.5, 34.25]);
+        assert!(decoded_editor.nodes[0].collapsed);
     }
 }
