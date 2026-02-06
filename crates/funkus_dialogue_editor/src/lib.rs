@@ -22,7 +22,8 @@ use thiserror::Error;
 
 pub use state::{
     DialogueEditorWorkspace, EditorAssetBrowser, EditorCommand, EditorPortraitBrowser,
-    EditorStatusMessages, OpenDialogue, StatusLevel, StatusMessage, apply_editor_commands,
+    EditorStatusMessages, EditorVisibility, OpenDialogue, StatusLevel, StatusMessage,
+    apply_editor_commands,
 };
 use ui_state::EditorUiState;
 use widgets::{InspectorWidget, LeftPanelWidget, NodeCanvasWidget, StatusBarWidget, ToolbarWidget};
@@ -206,6 +207,7 @@ impl Plugin for DialogueEditorPlugin {
             app.init_resource::<EditorPortraitBrowser>();
         }
         app.init_resource::<EditorStatusMessages>();
+        app.init_resource::<EditorVisibility>();
         app.init_resource::<EditorUiState>();
         app.add_message::<EditorCommand>();
         app.add_plugins(EguiPlugin::default());
@@ -243,6 +245,7 @@ fn draw_editor_ui(
     mut asset_browser: ResMut<EditorAssetBrowser>,
     mut portrait_browser: ResMut<EditorPortraitBrowser>,
     mut status: ResMut<EditorStatusMessages>,
+    editor_visibility: Res<EditorVisibility>,
     mut ui_state: ResMut<EditorUiState>,
     mut command_writer: MessageWriter<EditorCommand>,
     asset_server: Res<AssetServer>,
@@ -250,6 +253,10 @@ fn draw_editor_ui(
     images: Res<Assets<Image>>,
     registry: Option<Res<DialogueRegistry>>,
 ) {
+    if !editor_visibility.enabled {
+        return;
+    }
+
     if let Some((mut ctx, _)) = contexts.iter_mut().find(|(_, primary)| primary.is_some()) {
         let ctx = ctx.get_mut();
         asset_browser.refresh_if_needed();
@@ -366,9 +373,20 @@ fn handle_editor_io_commands(
                 }
 
                 let format = DialogueFileFormat::detect(&resolved_path);
+                let relative_path = asset_browser.relative_path_if_within(&resolved_path);
+                if let Some(existing) = workspace.open_dialogue_index(&relative_path) {
+                    workspace.set_active(existing);
+                    asset_browser.select_path(&relative_path);
+                    status.info(format!(
+                        "Dialogue already open: {} ({})",
+                        relative_path.display(),
+                        format.label()
+                    ));
+                    continue;
+                }
+
                 match load_dialogue_from_disk(&resolved_path) {
                     Ok(graph) => {
-                        let relative_path = asset_browser.relative_path_if_within(&resolved_path);
                         let dialogue =
                             OpenDialogue::from_loaded_graph(relative_path.clone(), graph);
                         workspace.open_dialogue(dialogue);

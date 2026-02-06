@@ -24,14 +24,11 @@ funkus_dialogue_ui = { path = "crates/funkus_dialogue_ui" }
 
 [dev-dependencies]
 funkus_dialogue_editor = { path = "crates/funkus_dialogue_editor" }
+bevy_egui = "0.39"
 
 [[example]]
-name = "simple_dialogue"
-path = "examples/simple_dialogue.rs"
-
-[[example]]
-name = "dialogue_editor"
-path = "examples/dialogue_editor.rs"
+name = "dialogue_workspace"
+path = "examples/dialogue_workspace.rs"
 
 [features]
 debug_ui = ["funkus_dialogue_core/debug_ui"]

@@ -27,6 +27,8 @@ use std::collections::HashMap;
 use super::ConnectionData;
 use super::node::NodeId;
 use super::nodes::DialogueNode;
+use crate::DialogueValue;
+use crate::registry::DialogueEffect;
 
 /// Represents a complete dialogue graph with nodes, connections, and metadata.
 ///
@@ -70,7 +72,7 @@ impl Serialize for DialogueGraph {
             #[serde(skip_serializing_if = "Option::is_none")]
             portrait: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
-            effect: Option<crate::registry::DialogueEffect>,
+            effect: Option<DialogueEffect>,
         }
 
         #[derive(Serialize)]
@@ -172,7 +174,7 @@ impl<'de> Deserialize<'de> for DialogueGraph {
             prompt: Option<String>,
             speaker: Option<String>,
             portrait: Option<String>,
-            effect: Option<crate::registry::DialogueEffect>,
+            effect: Option<DialogueEffect>,
         }
 
         #[derive(Deserialize)]
@@ -211,10 +213,7 @@ impl<'de> Deserialize<'de> for DialogueGraph {
                 }
                 "Effect" => {
                     let effect = node_data.effect.unwrap_or_else(|| {
-                        crate::registry::DialogueEffect::set(
-                            "game.flag",
-                            crate::registry::DialogueValue::Bool(true),
-                        )
+                        DialogueEffect::set("game.flag", DialogueValue::Bool(true))
                     });
                     DialogueNode::effect(effect)
                 }

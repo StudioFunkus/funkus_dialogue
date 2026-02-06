@@ -47,7 +47,7 @@ impl InspectorWidget {
     ) -> InspectorOutput {
         let mut dirty = false;
 
-        dirty |= draw_graph_section(ui, graph, status);
+        dirty |= draw_graph_section(ui, graph);
         ui.separator();
 
         let Some(node_id) = draw_selection_summary(ui, node_state) else {
@@ -125,11 +125,7 @@ impl InspectorWidget {
     }
 }
 
-fn draw_graph_section(
-    ui: &mut Ui,
-    graph: &mut DialogueGraph,
-    status: &mut EditorStatusMessages,
-) -> bool {
+fn draw_graph_section(ui: &mut Ui, graph: &mut DialogueGraph) -> bool {
     let mut dirty = false;
 
     ui.heading("Graph");
@@ -158,13 +154,6 @@ fn draw_graph_section(
             ui.label("Not set");
         }
     });
-
-    if ui.button("Validate Graph").clicked() {
-        match graph.validate() {
-            Ok(()) => status.success("Graph validated successfully."),
-            Err(error) => status.error(format!("Validation failed: {error}")),
-        }
-    }
 
     dirty
 }

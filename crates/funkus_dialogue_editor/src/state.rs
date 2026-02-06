@@ -68,8 +68,7 @@ impl OpenDialogue {
     }
 
     pub fn set_source_path(&mut self, path: PathBuf) {
-        self.source_path = Some(path.clone());
-        self.display_name = display_name_for_path(&path);
+        self.source_path = Some(path);
     }
 }
 
@@ -615,6 +614,12 @@ impl DialogueEditorWorkspace {
 
     /// Adds an existing dialogue to the workspace and selects it.
     pub fn open_dialogue(&mut self, dialogue: OpenDialogue) {
+        if let Some(path) = dialogue.source_path.as_ref() {
+            if let Some(existing) = self.open_dialogue_index(path) {
+                self.active_index = Some(existing);
+                return;
+            }
+        }
         self.open_dialogues.push(dialogue);
         self.active_index = Some(self.open_dialogues.len() - 1);
     }
@@ -650,6 +655,16 @@ impl DialogueEditorWorkspace {
         if index < self.open_dialogues.len() {
             self.active_index = Some(index);
         }
+    }
+
+    #[must_use]
+    pub fn open_dialogue_index(&self, path: &Path) -> Option<usize> {
+        self.open_dialogues.iter().position(|dialogue| {
+            dialogue
+                .source_path
+                .as_ref()
+                .is_some_and(|source| source == path)
+        })
     }
 }
 
@@ -736,6 +751,18 @@ impl StatusMessage {
 #[derive(Resource, Debug, Default)]
 pub struct EditorStatusMessages {
     pub messages: Vec<StatusMessage>,
+}
+
+/// Controls whether the editor UI is rendered.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct EditorVisibility {
+    pub enabled: bool,
+}
+
+impl Default for EditorVisibility {
+    fn default() -> Self {
+        Self { enabled: true }
+    }
 }
 
 impl EditorStatusMessages {

@@ -29,6 +29,18 @@ impl LeftPanelWidget {
 
         for (index, dialogue) in workspace.iter_dialogues() {
             let mut label = dialogue.display_name.clone();
+            if let Some(path) = dialogue.source_path.as_ref() {
+                let file_name = path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .map(str::to_owned)
+                    .unwrap_or_else(|| path.display().to_string());
+                label.push_str(" (");
+                label.push_str(&file_name);
+                label.push(')');
+            } else {
+                label.push_str(" (unsaved)");
+            }
             if dialogue.dirty {
                 label.push_str(" *");
             }

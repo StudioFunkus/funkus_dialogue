@@ -2674,6 +2674,7 @@ name = "funkus_dialogue"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_egui",
  "funkus_dialogue_core",
  "funkus_dialogue_editor",
  "funkus_dialogue_ui",
