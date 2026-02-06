@@ -1,6 +1,6 @@
 //! Node header widget for the graph canvas.
 
-use bevy_egui::egui::{Color32, RichText, Ui};
+use bevy_egui::egui::{Align, Button, Color32, Layout, RichText, Ui};
 
 use crate::node_editor::theme::GraphTheme;
 
@@ -10,8 +10,6 @@ pub struct NodeHeaderData<'a> {
     pub title: &'a str,
     /// True when this node is currently the start node.
     pub is_start: bool,
-    /// Accent color used for the "Start" label.
-    pub start_color: Color32,
 }
 
 /// Actions emitted by the header widget.
@@ -38,11 +36,14 @@ impl NodeHeaderWidget {
                     .strong()
                     .text_style(GraphTheme::text_style_node_header()),
             );
-            if data.is_start {
-                ui.label(RichText::new("Start").color(data.start_color));
-            } else if ui.small_button("Set Start").clicked() {
-                output.request_set_start = true;
-            }
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                if ui
+                    .add(Button::new("Set Start").small().selected(data.is_start))
+                    .clicked()
+                {
+                    output.request_set_start = true;
+                }
+            });
         });
 
         output

@@ -551,7 +551,6 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
                 NodeHeaderData {
                     title: &title,
                     is_start: self.graph.start_node == Some(graph_id),
-                    start_color: Color32::from_rgb(0x6B, 0xC5, 0x7A),
                 },
             );
             if output.request_set_start {
