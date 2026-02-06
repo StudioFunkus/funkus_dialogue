@@ -4,10 +4,11 @@
 //! its selection into `DialogueNodeEditorState` so the inspector can reflect it.
 
 mod theme;
+mod widgets;
 
 use std::collections::{HashMap, HashSet};
 
-use bevy_egui::egui::{self, Color32, Pos2, RichText, Ui, Vec2, pos2, vec2};
+use bevy_egui::egui::{self, Color32, Pos2, Ui, Vec2, pos2, vec2};
 use egui_snarl::ui::{
     BackgroundPattern, Grid, PinInfo, PinPlacement, SnarlPin, SnarlStyle, SnarlViewer, SnarlWidget,
 };
@@ -15,6 +16,7 @@ use egui_snarl::{InPin, InPinId, NodeId as SnarlNodeId, OutPin, OutPinId, Snarl}
 use funkus_dialogue_core::graph::{ConnectionData, DialogueGraph, DialogueNode, NodeId};
 use funkus_dialogue_core::{DialogueEditorMetadata, DialogueEditorNodeMetadata};
 use theme::GraphTheme;
+use widgets::{NodeBodyData, NodeBodyWidget, NodeHeaderData, NodeHeaderWidget};
 
 const NODE_GRID_COLUMNS: usize = 4;
 const NODE_GRID_SPACING: Vec2 = vec2(280.0, 180.0);
@@ -376,6 +378,8 @@ struct DialogueSnarlViewer<'a> {
     graph: &'a mut DialogueGraph,
     graph_to_snarl: &'a mut HashMap<NodeId, SnarlNodeId>,
     spawn_index: &'a mut usize,
+    header_widget: NodeHeaderWidget,
+    body_widget: NodeBodyWidget,
     dirty: bool,
 }
 
@@ -389,6 +393,8 @@ impl<'a> DialogueSnarlViewer<'a> {
             graph,
             graph_to_snarl,
             spawn_index,
+            header_widget: NodeHeaderWidget,
+            body_widget: NodeBodyWidget::default(),
             dirty: false,
         }
     }
@@ -539,20 +545,19 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
         snarl: &mut Snarl<DialogueNodeView>,
     ) {
         if let Some(graph_id) = self.graph_id_for_node(node, snarl) {
-            ui.horizontal(|ui| {
-                ui.label(
-                    RichText::new(self.title(&snarl[node]))
-                        .color(Color32::WHITE)
-                        .strong()
-                        .text_style(GraphTheme::text_style_node_header()),
-                );
-                if self.graph.start_node == Some(graph_id) {
-                    ui.label(RichText::new("Start").color(Color32::from_rgb(0x6B, 0xC5, 0x7A)));
-                } else if ui.small_button("Set Start").clicked() {
-                    let _ = self.graph.set_start_node(graph_id);
-                    self.dirty = true;
-                }
-            });
+            let title = self.title(&snarl[node]);
+            let output = self.header_widget.show(
+                ui,
+                NodeHeaderData {
+                    title: &title,
+                    is_start: self.graph.start_node == Some(graph_id),
+                    start_color: Color32::from_rgb(0x6B, 0xC5, 0x7A),
+                },
+            );
+            if output.request_set_start {
+                let _ = self.graph.set_start_node(graph_id);
+                self.dirty = true;
+            }
         } else {
             ui.label("Missing node");
         }
@@ -637,85 +642,20 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
 
         let connections_len = sorted_connections(self.graph, graph_id).len();
 
-        let Some(node_data) = self.graph.get_node_mut(graph_id) else {
+        let Some(node_data) = self.graph.get_node(graph_id) else {
             ui.label("Node not found in graph.");
             return;
         };
 
-        match node_data {
-            DialogueNode::Text { text, speaker, .. } => {
-                ui.vertical(|ui| {
-                    ui.set_width(NODE_BODY_WIDTH);
-                    ui.label(RichText::new("Text Node").strong());
-                    if let Some(speaker_name) = speaker.as_ref() {
-                        ui.add_sized(
-                            [NODE_BODY_WIDTH, 0.0],
-                            egui::Label::new(
-                                RichText::new(format!("Speaker: {speaker_name}")).small(),
-                            )
-                            .wrap(),
-                        );
-                    }
-                    let preview = snippet(text, NODE_BODY_MAX_CHARS);
-                    let response = ui.add_sized(
-                        [NODE_BODY_WIDTH, 0.0],
-                        egui::Label::new(preview.clone()).wrap(),
-                    );
-                    if preview != *text {
-                        response.on_hover_text(text.as_str());
-                    }
-                });
-            }
-            DialogueNode::Choice {
-                prompt, speaker, ..
-            } => {
-                ui.vertical(|ui| {
-                    ui.set_width(NODE_BODY_WIDTH);
-                    ui.label(RichText::new("Choice Node").strong());
-                    if let Some(speaker_name) = speaker.as_ref() {
-                        ui.add_sized(
-                            [NODE_BODY_WIDTH, 0.0],
-                            egui::Label::new(
-                                RichText::new(format!("Speaker: {speaker_name}")).small(),
-                            )
-                            .wrap(),
-                        );
-                    }
-                    if let Some(prompt_text) = prompt.as_ref() {
-                        let preview = snippet(prompt_text, NODE_BODY_MAX_CHARS);
-                        let response = ui.add_sized(
-                            [NODE_BODY_WIDTH, 0.0],
-                            egui::Label::new(preview.clone()).wrap(),
-                        );
-                        if preview != *prompt_text {
-                            response.on_hover_text(prompt_text.as_str());
-                        }
-                    } else {
-                        ui.add_sized(
-                            [NODE_BODY_WIDTH, 0.0],
-                            egui::Label::new(RichText::new("Prompt: (none)").small()).wrap(),
-                        );
-                    }
-                    ui.label(RichText::new(format!("Outputs: {}", connections_len)).small());
-                });
-            }
-            DialogueNode::Effect { effect } => {
-                ui.vertical(|ui| {
-                    ui.set_width(NODE_BODY_WIDTH);
-                    ui.label(RichText::new("Effect Node").strong());
-                    ui.add_sized(
-                        [NODE_BODY_WIDTH, 0.0],
-                        egui::Label::new(RichText::new(format!("Key: {}", effect.key)).small())
-                            .wrap(),
-                    );
-                    ui.add_sized(
-                        [NODE_BODY_WIDTH, 0.0],
-                        egui::Label::new(RichText::new(format!("Op: {:?}", effect.op)).small())
-                            .wrap(),
-                    );
-                });
-            }
-        }
+        self.body_widget.show(
+            ui,
+            NodeBodyData {
+                node: node_data,
+                connections_len,
+                body_width: NODE_BODY_WIDTH,
+                body_max_chars: NODE_BODY_MAX_CHARS,
+            },
+        );
     }
 
     fn has_node_menu(&mut self, _node: &DialogueNodeView) -> bool {
