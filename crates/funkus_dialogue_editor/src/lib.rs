@@ -13,7 +13,7 @@ use bevy_egui::{
     EguiUserTextures, PrimaryEguiContext, egui,
 };
 use funkus_dialogue_core::graph::DialogueGraph;
-use funkus_dialogue_core::registry::DialogueRegistry;
+use funkus_dialogue_core::registry::{DialogueMessageRegistry, DialogueRegistry};
 use funkus_dialogue_core::{DialogueAsset, DialogueEditorMetadata};
 use ron::ser::PrettyConfig;
 use std::fs;
@@ -260,6 +260,7 @@ fn draw_editor_ui(
     mut egui_textures: ResMut<EguiUserTextures>,
     images: Res<Assets<Image>>,
     registry: Option<Res<DialogueRegistry>>,
+    message_registry: Option<Res<DialogueMessageRegistry>>,
 ) {
     if !editor_visibility.enabled {
         return;
@@ -321,6 +322,7 @@ fn draw_editor_ui(
                         &mut egui_textures,
                         &images,
                         registry.as_deref(),
+                        message_registry.as_deref(),
                     );
                     if output.dirty {
                         active.dirty = true;

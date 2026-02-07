@@ -4,57 +4,32 @@
       {
         "type": "Text",
         "id": 1,
-        "text": "Hello there! This is a test dialogue. Nice to meet you!",
-        "speaker": "Guide",
-        "portrait": "dialogue/portraits/placeholder.png"
-      },
-      {
-        "type": "Choice",
-        "id": 2,
-        "prompt": "How would you like to respond?",
-        "speaker": "Guide"
-      },
-      {
-        "type": "Text",
-        "id": 3,
-        "text": "I'm glad we're getting along! Let me tell you more about this dialogue system.",
-        "speaker": "Guide"
-      },
-      {
-        "type": "Text",
-        "id": 4,
-        "text": "This is the Funkus Dialogue System for Bevy. It allows you to create interactive conversations with branching paths.",
-        "speaker": "Guide"
-      },
-      {
-        "type": "Text",
-        "id": 5,
         "text": "Farewell! Come back when you want to talk more.",
         "speaker": "Guide"
       },
       {
         "type": "Choice",
-        "id": 6,
+        "id": 2,
         "prompt": "What would you like to know about?",
         "speaker": "Guide"
       },
       {
         "type": "Text",
-        "id": 7,
+        "id": 3,
         "text": "You can create dialogues by defining JSON files with nodes and connections, or eventually using a visual editor.",
         "speaker": "Guide"
       },
       {
         "type": "Text",
-        "id": 8,
+        "id": 4,
         "text": "The system supports text nodes for narration and choice nodes for player decisions. More types like conditions are planned!",
         "speaker": "Guide"
       },
       {
         "type": "Effect",
-        "id": 9,
+        "id": 5,
         "effect": {
-          "key": "game.gold",
+          "key": "example_state.gold",
           "op": "add",
           "value": {
             "type": "int",
@@ -64,9 +39,9 @@
       },
       {
         "type": "Effect",
-        "id": 10,
+        "id": 6,
         "effect": {
-          "key": "game.met_npc",
+          "key": "example_state.met_npc",
           "op": "toggle",
           "value": {
             "type": "bool",
@@ -76,9 +51,9 @@
       },
       {
         "type": "Effect",
-        "id": 11,
+        "id": 7,
         "effect": {
-          "key": "game.reputation",
+          "key": "example_state.reputation",
           "op": "add",
           "value": {
             "type": "float",
@@ -88,9 +63,9 @@
       },
       {
         "type": "Effect",
-        "id": 12,
+        "id": 8,
         "effect": {
-          "key": "game.title",
+          "key": "example_state.title",
           "op": "set",
           "value": {
             "type": "string",
@@ -100,9 +75,9 @@
       },
       {
         "type": "Effect",
-        "id": 13,
+        "id": 9,
         "effect": {
-          "key": "game.inventory",
+          "key": "example_state.inventory",
           "op": "set",
           "value": {
             "type": "list",
@@ -125,21 +100,21 @@
       },
       {
         "type": "Effect",
-        "id": 14,
+        "id": 10,
         "effect": {
-          "key": "game.inventory",
+          "key": "example_state.inventory",
           "op": "push",
           "value": {
             "type": "enum",
-            "value": "Potion"
+            "value": "Map"
           }
         }
       },
       {
         "type": "Effect",
-        "id": 15,
+        "id": 11,
         "effect": {
-          "key": "game.inventory",
+          "key": "example_state.inventory",
           "op": "remove",
           "value": {
             "type": "enum",
@@ -149,9 +124,9 @@
       },
       {
         "type": "Effect",
-        "id": 16,
+        "id": 12,
         "effect": {
-          "key": "game.inventory",
+          "key": "example_state.inventory",
           "op": "clear",
           "value": {
             "type": "list",
@@ -161,188 +136,242 @@
       },
       {
         "type": "Effect",
-        "id": 17,
+        "id": 13,
         "effect": {
-          "key": "game.mood",
+          "key": "example_state.mood",
           "op": "set",
           "value": {
             "type": "enum",
             "value": "Happy"
           }
         }
+      },
+      {
+        "type": "Message",
+        "id": 14,
+        "message": {
+          "key": "example_dialogue_message",
+          "params": [
+            {
+              "name": "gold_delta",
+              "value": {
+                "type": "int",
+                "value": 50
+              }
+            },
+            {
+              "name": "new_title",
+              "value": {
+                "type": "string",
+                "value": "Champion"
+              }
+            },
+            {
+              "name": "mood",
+              "value": {
+                "type": "enum",
+                "value": "Happy"
+              }
+            }
+          ]
+        }
+      },
+      {
+        "type": "Choice",
+        "id": 15,
+        "prompt": "Test actions (page 1)",
+        "speaker": "Guide"
+      },
+      {
+        "type": "Choice",
+        "id": 16,
+        "prompt": "Test actions (page 2)",
+        "speaker": "Guide"
       }
     ],
     "connections": [
       {
-        "from": 1,
-        "to": 2,
-        "label": null,
-        "order": 0
-      },
-      {
         "from": 2,
-        "to": 3,
-        "label": "Let's just talk",
-        "order": 5
-      },
-      {
-        "from": 2,
-        "to": 9,
-        "label": "Give me some gold",
-        "order": 0
-      },
-      {
-        "from": 2,
-        "to": 10,
-        "label": "Mark that we've met",
-        "order": 1
-      },
-      {
-        "from": 2,
-        "to": 11,
-        "label": "Boost my reputation",
-        "order": 2
-      },
-      {
-        "from": 2,
-        "to": 12,
-        "label": "Give me a title",
+        "to": 1,
+        "label": "That's all I need to know.",
         "order": 3
       },
       {
         "from": 2,
-        "to": 13,
-        "label": "Restock my inventory",
-        "order": 4
+        "to": 3,
+        "label": "How do I create dialogue?",
+        "order": 0
       },
       {
         "from": 2,
-        "to": 14,
-        "label": "Add a potion",
-        "order": 6
+        "to": 4,
+        "label": "What node types are available?",
+        "order": 1
       },
       {
         "from": 2,
         "to": 15,
-        "label": "Remove the map",
-        "order": 7
-      },
-      {
-        "from": 2,
-        "to": 16,
-        "label": "Clear inventory",
-        "order": 8
-      },
-      {
-        "from": 2,
-        "to": 17,
-        "label": "Set mood to Happy",
-        "order": 9
+        "label": "Open test actions",
+        "order": 2
       },
       {
         "from": 3,
-        "to": 4,
+        "to": 2,
         "label": null,
         "order": 0
       },
       {
         "from": 4,
-        "to": 6,
+        "to": 2,
+        "label": null,
+        "order": 0
+      },
+      {
+        "from": 5,
+        "to": 15,
         "label": null,
         "order": 0
       },
       {
         "from": 6,
-        "to": 2,
-        "label": "Make more effect choices",
-        "order": 3
-      },
-      {
-        "from": 6,
-        "to": 5,
-        "label": "That's all I need to know.",
-        "order": 2
-      },
-      {
-        "from": 6,
-        "to": 7,
-        "label": "How do I create dialogue?",
+        "to": 15,
+        "label": null,
         "order": 0
       },
       {
-        "from": 6,
-        "to": 8,
-        "label": "What node types are available?",
-        "order": 1
-      },
-      {
         "from": 7,
-        "to": 6,
+        "to": 15,
         "label": null,
         "order": 0
       },
       {
         "from": 8,
-        "to": 6,
+        "to": 15,
         "label": null,
         "order": 0
       },
       {
         "from": 9,
-        "to": 6,
+        "to": 15,
         "label": null,
         "order": 0
       },
       {
         "from": 10,
-        "to": 6,
+        "to": 15,
         "label": null,
         "order": 0
       },
       {
         "from": 11,
-        "to": 6,
+        "to": 16,
         "label": null,
         "order": 0
       },
       {
         "from": 12,
-        "to": 6,
+        "to": 16,
         "label": null,
         "order": 0
       },
       {
         "from": 13,
-        "to": 6,
+        "to": 16,
         "label": null,
         "order": 0
       },
       {
         "from": 14,
-        "to": 6,
+        "to": 16,
         "label": null,
         "order": 0
       },
       {
         "from": 15,
+        "to": 2,
+        "label": "Back to dialogue topics",
+        "order": 7
+      },
+      {
+        "from": 15,
+        "to": 5,
+        "label": "Give me some gold",
+        "order": 0
+      },
+      {
+        "from": 15,
         "to": 6,
-        "label": null,
+        "label": "Mark that we've met",
+        "order": 1
+      },
+      {
+        "from": 15,
+        "to": 7,
+        "label": "Boost my reputation",
+        "order": 2
+      },
+      {
+        "from": 15,
+        "to": 8,
+        "label": "Give me a title",
+        "order": 3
+      },
+      {
+        "from": 15,
+        "to": 9,
+        "label": "Restock my inventory",
+        "order": 4
+      },
+      {
+        "from": 15,
+        "to": 10,
+        "label": "Add a potion",
+        "order": 5
+      },
+      {
+        "from": 15,
+        "to": 16,
+        "label": "More tests (page 2)",
+        "order": 6
+      },
+      {
+        "from": 16,
+        "to": 2,
+        "label": "Back to dialogue topics",
+        "order": 5
+      },
+      {
+        "from": 16,
+        "to": 11,
+        "label": "Remove the map",
         "order": 0
       },
       {
         "from": 16,
-        "to": 6,
-        "label": null,
-        "order": 0
+        "to": 12,
+        "label": "Clear inventory",
+        "order": 1
       },
       {
-        "from": 17,
-        "to": 6,
-        "label": null,
-        "order": 0
+        "from": 16,
+        "to": 13,
+        "label": "Set mood to Happy",
+        "order": 2
+      },
+      {
+        "from": 16,
+        "to": 14,
+        "label": "Trigger dialogue message event",
+        "order": 3
+      },
+      {
+        "from": 16,
+        "to": 15,
+        "label": "Back to tests (page 1)",
+        "order": 4
       }
     ],
-    "start_node": 1,
+    "start_node": 2,
     "name": "Test Dialogue"
   },
   "name": "Test Dialogue",
@@ -351,121 +380,113 @@
       {
         "id": 1,
         "pos": [
-          -375.5085,
-          -3.382958
+          782.674,
+          -75.45962
         ]
       },
       {
         "id": 2,
         "pos": [
-          8.517478,
-          -23.680717
+          236.12784,
+          103.537674
         ]
       },
       {
         "id": 3,
         "pos": [
-          574.06616,
-          332.32837
+          316.0724,
+          -89.49865
         ]
       },
       {
         "id": 4,
         "pos": [
-          947.7847,
-          292.7968
+          362.674,
+          356.23993
         ]
       },
       {
         "id": 5,
         "pos": [
-          1921.6769,
-          252.4287
+          1856.2117,
+          -194.51263
         ]
       },
       {
         "id": 6,
         "pos": [
-          1334.4598,
-          205.51085
+          1856.6578,
+          -85.988785
         ]
       },
       {
         "id": 7,
         "pos": [
-          1358.2582,
-          -71.189415
-        ],
-        "collapsed": true
+          1854.4554,
+          11.977845
+        ]
       },
       {
         "id": 8,
         "pos": [
-          1394.774,
-          520.56964
+          1857.9661,
+          116.183754
         ]
       },
       {
         "id": 9,
         "pos": [
-          581.67084,
-          -260.16302
+          1865.2362,
+          219.10844
         ]
       },
       {
         "id": 10,
         "pos": [
-          579.4306,
-          -135.43951
+          1866.9907,
+          321.92206
         ]
       },
       {
         "id": 11,
         "pos": [
-          573.21497,
-          -13.487723
+          1872.2557,
+          449.30356
         ]
       },
       {
         "id": 12,
         "pos": [
-          571.96265,
-          94.55397
+          1868.7465,
+          550.3615
         ]
       },
       {
         "id": 13,
         "pos": [
-          566.00916,
-          209.627
+          1861.7257,
+          660.19446
         ]
       },
       {
         "id": 14,
         "pos": [
-          575.68274,
-          528.75104
+          1859.9719,
+          766.51776
         ]
       },
       {
         "id": 15,
         "pos": [
-          569.0497,
-          672.67926
+          1163.5375,
+          105.29265
         ]
       },
       {
         "id": 16,
         "pos": [
-          569.028,
-          811.28436
-        ]
-      },
-      {
-        "id": 17,
-        "pos": [
-          569.87885,
-          986.6819
+          1145.9888,
+          588.9136
         ]
       }
     ]

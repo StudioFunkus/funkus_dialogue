@@ -6,7 +6,8 @@ use bevy_egui::{EguiTextureHandle, EguiUserTextures};
 
 use funkus_dialogue_core::graph::{DialogueGraph, DialogueNode, NodeId};
 use funkus_dialogue_core::registry::{
-    DialogueEffect, DialogueFieldKind, DialogueOperation, DialogueRegistry, DialogueValue,
+    DialogueEffect, DialogueFieldKind, DialogueMessageCall, DialogueMessageRegistry,
+    DialogueOperation, DialogueRegistry, DialogueValue,
 };
 use rfd::FileDialog;
 use std::path::Path;
@@ -30,6 +31,7 @@ enum NodeKind {
     Text,
     Choice,
     Effect,
+    Message,
 }
 
 impl InspectorWidget {
@@ -44,6 +46,7 @@ impl InspectorWidget {
         egui_textures: &mut EguiUserTextures,
         images: &Assets<Image>,
         registry: Option<&DialogueRegistry>,
+        message_registry: Option<&DialogueMessageRegistry>,
     ) -> InspectorOutput {
         let mut dirty = false;
 
@@ -103,6 +106,10 @@ impl InspectorWidget {
                     dirty |= draw_effect_fields(ui, effect, registry);
                     node_kind = Some(NodeKind::Effect);
                 }
+                DialogueNode::Message { message } => {
+                    dirty |= draw_message_fields(ui, message, message_registry);
+                    node_kind = Some(NodeKind::Message);
+                }
             }
         }
 
@@ -116,6 +123,9 @@ impl InspectorWidget {
                     dirty |= draw_choice_connections(ui, graph, node_state, status, node_id);
                 }
                 NodeKind::Effect => {
+                    draw_text_connections(ui, graph, node_id);
+                }
+                NodeKind::Message => {
                     draw_text_connections(ui, graph, node_id);
                 }
             }
@@ -496,6 +506,155 @@ fn draw_effect_fields(
     dirty
 }
 
+fn draw_message_fields(
+    ui: &mut Ui,
+    message: &mut DialogueMessageCall,
+    registry: Option<&DialogueMessageRegistry>,
+) -> bool {
+    let mut dirty = false;
+
+    ui.heading("Message");
+
+    if let Some(registry) = registry {
+        let mut keys: Vec<&String> = registry
+            .messages()
+            .map(|definition| &definition.key)
+            .collect();
+        keys.sort();
+
+        let previous = message.key.clone();
+        egui::ComboBox::from_id_salt("message_key")
+            .selected_text(message.key.as_str())
+            .show_ui(ui, |ui| {
+                for key in keys {
+                    if ui.selectable_label(message.key == *key, key).clicked() {
+                        message.key = key.clone();
+                    }
+                }
+            });
+
+        if message.key.is_empty() {
+            message.key = previous;
+        } else if message.key != previous {
+            dirty = true;
+        }
+
+        let Some(definition) = registry.message(&message.key) else {
+            ui.label("No message metadata for this key.");
+            return dirty;
+        };
+
+        for field in &definition.fields {
+            let index = if let Some(index) = message
+                .params
+                .iter()
+                .position(|param| param.name == field.name)
+            {
+                index
+            } else {
+                message
+                    .params
+                    .push(funkus_dialogue_core::registry::DialogueMessageParam {
+                        name: field.name.clone(),
+                        value: default_value_for_kind(&field.kind),
+                    });
+                dirty = true;
+                message.params.len().saturating_sub(1)
+            };
+
+            if !value_matches_kind(&message.params[index].value, &field.kind) {
+                message.params[index].value = default_value_for_kind(&field.kind);
+                dirty = true;
+            }
+
+            ui.separator();
+            ui.label(format!("{} ({:?})", field.name, field.kind));
+            if edit_message_field_value(ui, &mut message.params[index].value, &field.kind) {
+                dirty = true;
+            }
+        }
+    } else {
+        ui.label("No dialogue message registry available.");
+        dirty |= ui.text_edit_singleline(&mut message.key).changed();
+    }
+
+    dirty
+}
+
+fn edit_message_field_value(
+    ui: &mut Ui,
+    value: &mut DialogueValue,
+    kind: &DialogueFieldKind,
+) -> bool {
+    let mut dirty = false;
+
+    if !value_matches_kind(value, kind) {
+        *value = default_value_for_kind(kind);
+        dirty = true;
+    }
+
+    match kind {
+        DialogueFieldKind::Bool
+        | DialogueFieldKind::Int
+        | DialogueFieldKind::Float
+        | DialogueFieldKind::String
+        | DialogueFieldKind::Enum { .. } => {
+            dirty |= edit_value(ui, value, kind);
+        }
+        DialogueFieldKind::List(inner) => {
+            let DialogueValue::List(items) = value else {
+                return true;
+            };
+
+            let mut remove_index = None;
+            for (index, item) in items.iter_mut().enumerate() {
+                ui.push_id(index, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label(format!("#{}", index + 1));
+                        if edit_message_field_value(ui, item, inner) {
+                            dirty = true;
+                        }
+                        if ui.button("Remove").clicked() {
+                            remove_index = Some(index);
+                        }
+                    });
+                });
+            }
+
+            if let Some(index) = remove_index {
+                items.remove(index);
+                dirty = true;
+            }
+
+            if ui.button("Add Item").clicked() {
+                items.push(default_value_for_kind(inner));
+                dirty = true;
+            }
+        }
+        DialogueFieldKind::Array { element, len } => {
+            let DialogueValue::List(items) = value else {
+                return true;
+            };
+
+            if items.len() != *len {
+                *items = (0..*len).map(|_| default_value_for_kind(element)).collect();
+                dirty = true;
+            }
+
+            for (index, item) in items.iter_mut().enumerate() {
+                ui.horizontal(|ui| {
+                    ui.label(format!("#{}", index + 1));
+                    if edit_message_field_value(ui, item, element) {
+                        dirty = true;
+                    }
+                });
+            }
+        }
+    }
+
+    dirty
+}
+
 fn draw_list_value(
     ui: &mut Ui,
     effect: &mut DialogueEffect,
@@ -588,12 +747,8 @@ fn edit_value(ui: &mut Ui, value: &mut DialogueValue, kind: &DialogueFieldKind) 
     }
 }
 
-fn ensure_value_kind(
-    effect: &mut DialogueEffect,
-    kind: &DialogueFieldKind,
-    op: DialogueOperation,
-) -> bool {
-    let matches_kind = match (&effect.value, kind) {
+fn value_matches_kind(value: &DialogueValue, kind: &DialogueFieldKind) -> bool {
+    match (value, kind) {
         (DialogueValue::Bool(_), DialogueFieldKind::Bool)
         | (DialogueValue::Int(_), DialogueFieldKind::Int)
         | (DialogueValue::Float(_), DialogueFieldKind::Float)
@@ -602,9 +757,15 @@ fn ensure_value_kind(
         | (DialogueValue::List(_), DialogueFieldKind::List(_))
         | (DialogueValue::List(_), DialogueFieldKind::Array { .. }) => true,
         _ => false,
-    };
+    }
+}
 
-    if !matches_kind {
+fn ensure_value_kind(
+    effect: &mut DialogueEffect,
+    kind: &DialogueFieldKind,
+    op: DialogueOperation,
+) -> bool {
+    if !value_matches_kind(&effect.value, kind) {
         effect.value = default_value_for_kind(kind);
         return true;
     }

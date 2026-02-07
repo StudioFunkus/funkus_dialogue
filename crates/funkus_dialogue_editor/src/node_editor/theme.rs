@@ -102,6 +102,12 @@ impl GraphTheme {
         link_color: Color32::from_rgb(0x7A, 0x6A, 0xE6),
     };
 
+    /// Header + link palette for the message node type.
+    pub const MESSAGE: NodePalette = NodePalette {
+        header_fill: Color32::from_rgb(0x2A, 0x86, 0x6A),
+        link_color: Color32::from_rgb(0x42, 0xC0, 0x98),
+    };
+
     /// Link color used for non-semantic "add slot" pins on choice nodes.
     pub const ADD_SLOT_LINK: Color32 = Color32::from_rgb(0x8A, 0x8A, 0x8A);
 
@@ -111,6 +117,7 @@ impl GraphTheme {
             DialogueNode::Text { .. } => Self::TEXT,
             DialogueNode::Choice { .. } => Self::CHOICE,
             DialogueNode::Effect { .. } => Self::EFFECT,
+            DialogueNode::Message { .. } => Self::MESSAGE,
         }
     }
 }

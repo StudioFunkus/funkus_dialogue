@@ -9,12 +9,13 @@
 //! - **Text Nodes**: Display narrative text with optional speaker metadata
 //! - **Choice Nodes**: Present options to the player with an optional prompt
 //! - **Effect Nodes**: Apply registry-backed resource changes
+//! - **Message Nodes**: Dispatch registered Bevy messages with typed parameters
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use super::node::DialogueElement;
-use crate::registry::DialogueEffect;
+use crate::registry::{DialogueEffect, DialogueMessageCall};
 
 /// All supported dialogue node variants.
 ///
@@ -61,6 +62,11 @@ pub enum DialogueNode {
         /// Effect to apply when the node is activated.
         effect: DialogueEffect,
     },
+    /// Dispatches a registered Bevy message and advances immediately.
+    Message {
+        /// Message payload to send when the node is activated.
+        message: DialogueMessageCall,
+    },
 }
 
 impl DialogueNode {
@@ -87,13 +93,18 @@ impl DialogueNode {
         DialogueNode::Effect { effect }
     }
 
+    /// Builds a new message node with the provided message call payload.
+    pub fn message(message: DialogueMessageCall) -> Self {
+        DialogueNode::Message { message }
+    }
+
     /// Applies a speaker name to the node.
     pub fn set_speaker(&mut self, speaker: impl Into<String>) {
         match self {
             DialogueNode::Text { speaker: s, .. } | DialogueNode::Choice { speaker: s, .. } => {
                 *s = Some(speaker.into());
             }
-            DialogueNode::Effect { .. } => {}
+            DialogueNode::Effect { .. } | DialogueNode::Message { .. } => {}
         }
     }
 
@@ -103,7 +114,7 @@ impl DialogueNode {
             DialogueNode::Text { speaker, .. } | DialogueNode::Choice { speaker, .. } => {
                 *speaker = None;
             }
-            DialogueNode::Effect { .. } => {}
+            DialogueNode::Effect { .. } | DialogueNode::Message { .. } => {}
         }
     }
 
@@ -113,7 +124,7 @@ impl DialogueNode {
             DialogueNode::Text { portrait: p, .. } | DialogueNode::Choice { portrait: p, .. } => {
                 *p = Some(portrait.into());
             }
-            DialogueNode::Effect { .. } => {}
+            DialogueNode::Effect { .. } | DialogueNode::Message { .. } => {}
         }
     }
 
@@ -123,7 +134,7 @@ impl DialogueNode {
             DialogueNode::Text { portrait, .. } | DialogueNode::Choice { portrait, .. } => {
                 *portrait = None;
             }
-            DialogueNode::Effect { .. } => {}
+            DialogueNode::Effect { .. } | DialogueNode::Message { .. } => {}
         }
     }
 
@@ -209,6 +220,9 @@ impl DialogueElement for DialogueNode {
             }
             DialogueNode::Effect { effect } => {
                 format!("Effect: {}", effect.key)
+            }
+            DialogueNode::Message { message } => {
+                format!("Message: {}", message.key)
             }
         }
     }

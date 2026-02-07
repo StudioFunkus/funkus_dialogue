@@ -41,6 +41,8 @@
 //!
 //! - **Text Nodes**: Display narrative text with speaker information
 //! - **Choice Nodes**: Present options to the player
+//! - **Effect Nodes**: Apply data-driven resource mutations
+//! - **Message Nodes**: Dispatch typed Bevy messages from dialogue
 //!
 //! Additional node types planned for future versions include:
 //!

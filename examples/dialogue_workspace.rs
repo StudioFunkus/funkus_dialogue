@@ -5,6 +5,7 @@ use bevy::window::WindowResolution;
 use funkus_dialogue_core::*;
 use funkus_dialogue_editor::{DialogueEditorPlugin, DialogueEditorWorkspace, EditorVisibility};
 use funkus_dialogue_ui::*;
+use std::time::Duration;
 
 #[derive(Debug, Clone, Reflect, PartialEq, Eq)]
 enum ExampleItem {
@@ -21,13 +22,21 @@ enum ExampleMood {
 }
 
 #[derive(Resource, Reflect, DialogueResource)]
-#[dialogue(key = "game")]
+#[dialogue(key = "example_state")]
 struct ExampleState {
     gold: i32,
     reputation: f32,
     met_npc: bool,
     title: String,
     inventory: Vec<ExampleItem>,
+    mood: ExampleMood,
+}
+
+#[derive(Message, Clone, Debug, Reflect, DialogueMessage)]
+#[dialogue(key = "example_dialogue_message")]
+struct ExampleDialogueMessage {
+    gold_delta: i32,
+    new_title: String,
     mood: ExampleMood,
 }
 
@@ -56,6 +65,46 @@ struct PreviewRequest {
     requested: bool,
 }
 
+#[derive(Resource)]
+struct MessageDebugVisual {
+    last_message: Option<String>,
+    active_timer: Timer,
+}
+
+impl Default for MessageDebugVisual {
+    fn default() -> Self {
+        let mut timer = Timer::from_seconds(2.5, TimerMode::Once);
+        timer.pause();
+        Self {
+            last_message: None,
+            active_timer: timer,
+        }
+    }
+}
+
+impl MessageDebugVisual {
+    fn trigger(&mut self, summary: String) {
+        self.last_message = Some(summary);
+        self.active_timer.set_duration(Duration::from_secs_f32(2.5));
+        self.active_timer.reset();
+        self.active_timer.unpause();
+    }
+
+    fn tick(&mut self, delta: Duration) {
+        if self.active_timer.is_paused() {
+            return;
+        }
+        self.active_timer.tick(delta);
+        if self.active_timer.is_finished() {
+            self.active_timer.pause();
+        }
+    }
+
+    fn is_active(&self) -> bool {
+        !self.active_timer.is_paused() && !self.active_timer.is_finished()
+    }
+}
+
 #[derive(States, Debug, Clone, Copy, Eq, PartialEq, Hash, Default)]
 enum AppState {
     #[default]
@@ -79,10 +128,13 @@ fn main() {
             DialogueEditorPlugin::default(),
         ))
         .insert_resource(ExampleState::default())
+        .init_resource::<MessageDebugVisual>()
         .init_resource::<PreviewContext>()
         .init_resource::<PreviewRequest>()
         .init_state::<AppState>()
+        .add_systems(Update, apply_example_dialogue_messages)
         .add_systems(Update, update_state_debug_ui)
+        .add_systems(Update, update_message_debug_ui)
         .add_systems(Update, editor_controls.run_if(in_state(AppState::Editor)))
         .add_systems(Update, begin_preview.run_if(in_state(AppState::Editor)))
         .add_systems(Update, preview_input.run_if(in_state(AppState::Preview)))
@@ -93,6 +145,22 @@ fn main() {
         .add_systems(OnEnter(AppState::Preview), enter_preview)
         .add_systems(OnExit(AppState::Preview), exit_preview)
         .run();
+}
+
+fn apply_example_dialogue_messages(
+    mut messages: MessageReader<ExampleDialogueMessage>,
+    mut state: ResMut<ExampleState>,
+    mut visual: ResMut<MessageDebugVisual>,
+) {
+    for message in messages.read() {
+        state.gold += message.gold_delta;
+        state.title = message.new_title.clone();
+        state.mood = message.mood.clone();
+        visual.trigger(format!(
+            "gold_delta={}, new_title=\"{}\", mood={:?}",
+            message.gold_delta, message.new_title, message.mood
+        ));
+    }
 }
 
 fn editor_controls(mut request: ResMut<PreviewRequest>, keyboard: Res<ButtonInput<KeyCode>>) {
@@ -240,6 +308,9 @@ fn handle_preview_end(
 #[derive(Component)]
 struct StateDebugText;
 
+#[derive(Component)]
+struct MessageDebugText;
+
 fn update_state_debug_ui(
     mut commands: Commands,
     state: Res<ExampleState>,
@@ -285,5 +356,56 @@ fn update_state_debug_ui(
 
     for mut text in &mut query {
         *text = Text::new(formatted.clone());
+    }
+}
+
+fn update_message_debug_ui(
+    mut commands: Commands,
+    time: Res<Time>,
+    mut visual: ResMut<MessageDebugVisual>,
+    mut query: Query<(&mut Text, &mut TextColor), With<MessageDebugText>>,
+) {
+    if query.is_empty() {
+        commands.spawn((
+            Text::new("Dialogue Message\nNo message triggered yet."),
+            TextFont {
+                font_size: 16.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.6, 0.6, 0.6)),
+            Node {
+                position_type: PositionType::Absolute,
+                top: Val::Px(200.0),
+                right: Val::Px(10.0),
+                ..default()
+            },
+            MessageDebugText,
+        ));
+    }
+
+    visual.tick(time.delta());
+
+    let (label, color) = if let Some(last) = visual.last_message.as_ref() {
+        if visual.is_active() {
+            (
+                format!("Dialogue Message Triggered\n{last}"),
+                Color::srgb(0.4, 1.0, 0.6),
+            )
+        } else {
+            (
+                format!("Last Dialogue Message\n{last}"),
+                Color::srgb(0.7, 0.7, 0.7),
+            )
+        }
+    } else {
+        (
+            "Dialogue Message\nNo message triggered yet.".to_string(),
+            Color::srgb(0.6, 0.6, 0.6),
+        )
+    };
+
+    for (mut text, mut text_color) in &mut query {
+        *text = Text::new(label.clone());
+        *text_color = TextColor(color);
     }
 }

@@ -8,7 +8,7 @@ use bevy::prelude::*;
 use tracing::{error, warn};
 
 use crate::asset::DialogueAsset;
-use crate::registry::DialogueRegistry;
+use crate::registry::{DialogueMessageRegistry, DialogueRegistry};
 use crate::runtime::DialogueRunner;
 use crate::runtime::DialogueState;
 use crate::{AdvanceDialogue, DialogueNodeActivated};
@@ -93,7 +93,7 @@ pub fn update_dialogue_runners(
 pub struct DialogueSystemSet;
 
 #[derive(Resource, Default)]
-struct DialogueEffectCursor(MessageCursor<DialogueNodeActivated>);
+struct DialogueActionCursor(MessageCursor<DialogueNodeActivated>);
 
 /// Handle dialogue start requests.
 pub fn handle_start_dialogue_events(
@@ -248,10 +248,10 @@ pub fn handle_select_dialogue_events(
     }
 }
 
-/// Apply dialogue effect nodes and auto-advance after execution.
-fn apply_dialogue_effects(world: &mut World) {
+/// Apply non-visual dialogue nodes (effects/messages) and auto-advance.
+fn apply_dialogue_actions(world: &mut World) {
     let events: Vec<DialogueNodeActivated> =
-        world.resource_scope(|world, mut cursor: Mut<DialogueEffectCursor>| {
+        world.resource_scope(|world, mut cursor: Mut<DialogueActionCursor>| {
             let messages = world.resource::<Messages<DialogueNodeActivated>>();
             cursor.0.read(messages).cloned().collect()
         });
@@ -260,12 +260,17 @@ fn apply_dialogue_effects(world: &mut World) {
         return;
     }
 
+    enum NodeAction {
+        Effect(crate::registry::DialogueEffect),
+        Message(crate::registry::DialogueMessageCall),
+    }
+
     for event in events {
         let dialogue_handle = match world.get::<DialogueRunner>(event.entity) {
             Some(runner) => runner.dialogue_handle.clone(),
             None => continue,
         };
-        let effect = {
+        let action = {
             let dialogue_assets = world.resource::<Assets<DialogueAsset>>();
             let Some(dialogue) = dialogue_assets.get(&dialogue_handle) else {
                 continue;
@@ -273,45 +278,78 @@ fn apply_dialogue_effects(world: &mut World) {
             let Some(node) = dialogue.graph.get_node(event.node_id) else {
                 continue;
             };
-            let crate::graph::DialogueNode::Effect { effect } = node else {
-                continue;
-            };
-            effect.clone()
+            match node {
+                crate::graph::DialogueNode::Effect { effect } => NodeAction::Effect(effect.clone()),
+                crate::graph::DialogueNode::Message { message } => {
+                    NodeAction::Message(message.clone())
+                }
+                _ => continue,
+            }
         };
 
-        let field = world
-            .resource::<DialogueRegistry>()
-            .field(&effect.key)
-            .cloned();
-        let Some(field) = field else {
-            warn!("Dialogue effect key {} is not registered", effect.key);
-            continue;
-        };
+        match action {
+            NodeAction::Effect(effect) => {
+                let field = world
+                    .resource::<DialogueRegistry>()
+                    .field(&effect.key)
+                    .cloned();
+                let Some(field) = field else {
+                    warn!("Dialogue effect key {} is not registered", effect.key);
+                    continue;
+                };
 
-        let reflect_from_ptr = {
-            let type_registry = world.resource::<AppTypeRegistry>();
-            let type_registry = type_registry.read();
-            crate::registry::resolve_reflect_from_ptr(&type_registry, &field)
-        };
+                let reflect_from_ptr = {
+                    let type_registry = world.resource::<AppTypeRegistry>();
+                    let type_registry = type_registry.read();
+                    crate::registry::resolve_reflect_from_ptr(&type_registry, &field)
+                };
 
-        let Ok(reflect_from_ptr) = reflect_from_ptr else {
-            error!("Missing ReflectFromPtr for {}", effect.key);
-            continue;
-        };
+                let Ok(reflect_from_ptr) = reflect_from_ptr else {
+                    error!("Missing ReflectFromPtr for {}", effect.key);
+                    continue;
+                };
 
-        if let Err(err) = crate::registry::apply_effect_with_field_and_reflect(
-            world,
-            &field,
-            &reflect_from_ptr,
-            &effect,
-        ) {
-            error!("Failed to apply dialogue effect {}: {}", effect.key, err);
+                if let Err(err) = crate::registry::apply_effect_with_field_and_reflect(
+                    world,
+                    &field,
+                    &reflect_from_ptr,
+                    &effect,
+                ) {
+                    error!("Failed to apply dialogue effect {}: {}", effect.key, err);
+                    continue;
+                }
+                world
+                    .resource_mut::<Messages<AdvanceDialogue>>()
+                    .write(AdvanceDialogue {
+                        entity: event.entity,
+                    });
+            }
+            NodeAction::Message(message) => {
+                let dispatch = world
+                    .get_resource::<DialogueMessageRegistry>()
+                    .and_then(|registry| registry.dispatch_fn(&message.key));
+                let Some(dispatch) = dispatch else {
+                    warn!(
+                        "Dialogue message key {} is not registered or message registry is unavailable",
+                        message.key
+                    );
+                    continue;
+                };
+
+                if let Err(err) = dispatch(world, &message) {
+                    error!(
+                        "Failed to dispatch dialogue message {}: {}",
+                        message.key, err
+                    );
+                    continue;
+                }
+                world
+                    .resource_mut::<Messages<AdvanceDialogue>>()
+                    .write(AdvanceDialogue {
+                        entity: event.entity,
+                    });
+            }
         }
-        world
-            .resource_mut::<Messages<AdvanceDialogue>>()
-            .write(AdvanceDialogue {
-                entity: event.entity,
-            });
     }
 }
 
@@ -353,11 +391,11 @@ pub fn setup_dialogue_systems(app: &mut App) {
         )
         .add_systems(
             PostUpdate,
-            (handle_start_dialogue_events, apply_dialogue_effects)
+            (handle_start_dialogue_events, apply_dialogue_actions)
                 .chain()
                 .in_set(DialogueSystemSet),
         );
-    app.init_resource::<DialogueEffectCursor>();
+    app.init_resource::<DialogueActionCursor>();
 }
 
 #[cfg(test)]
@@ -371,13 +409,30 @@ mod tests {
         SelectDialogueChoice, StartDialogue, StopDialogue,
     };
     use crate::graph::{ConnectionData, DialogueGraph, DialogueNode};
-    use crate::registry::{DialogueEffect, DialogueOperation, DialogueRegistry, DialogueValue};
+    use crate::registry::{
+        DialogueEffect, DialogueMessageCall, DialogueMessageRegistryPlugin, DialogueOperation,
+        DialogueRegistry, DialogueValue,
+    };
     use crate::runtime::{DialogueRunner, setup_dialogue_systems};
 
     #[derive(Resource, Reflect, crate::DialogueResource, Default)]
     #[dialogue(key = "runtime_test")]
     struct RuntimeTestState {
         value: i32,
+    }
+
+    #[derive(Debug, Clone, PartialEq, Eq, Reflect)]
+    enum RuntimeTestTone {
+        Calm,
+        Urgent,
+    }
+
+    #[derive(Message, Clone, Debug, PartialEq, Reflect, crate::DialogueMessage)]
+    #[dialogue(key = "runtime_test.message")]
+    struct RuntimeTestMessage {
+        amount: i32,
+        label: String,
+        tone: RuntimeTestTone,
     }
 
     #[derive(Resource)]
@@ -415,6 +470,7 @@ mod tests {
             .init_resource::<Time>()
             .init_resource::<DialogueRegistry>()
             .init_resource::<AppTypeRegistry>()
+            .add_plugins(DialogueMessageRegistryPlugin)
             .add_message::<DialogueStarted>()
             .add_message::<DialogueEnded>()
             .add_message::<DialogueNodeActivated>()
@@ -565,6 +621,58 @@ mod tests {
             advance_cursor.read(messages).cloned().collect()
         };
         assert!(advances.is_empty());
+    }
+
+    #[test]
+    fn message_nodes_dispatch_registered_bevy_messages_and_queue_advance() {
+        let mut app = init_runtime_test_app();
+
+        let mut graph = DialogueGraph::new();
+        let start = graph.add_node(DialogueNode::message(
+            DialogueMessageCall::new("runtime_test.message")
+                .with_param("amount", DialogueValue::Int(12))
+                .with_param("label", DialogueValue::String("hello".to_string()))
+                .with_param("tone", DialogueValue::Enum("Urgent".to_string())),
+        ));
+        graph.set_start_node(start).expect("set start");
+
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<DialogueAsset>>()
+            .add(DialogueAsset::new(graph));
+        let entity = app.world_mut().spawn(DialogueRunner::default()).id();
+
+        app.world_mut()
+            .resource_mut::<Messages<StartDialogue>>()
+            .write(StartDialogue {
+                entity,
+                dialogue_handle: handle,
+            });
+
+        app.update();
+
+        let mut message_cursor = MessageCursor::<RuntimeTestMessage>::default();
+        let sent: Vec<RuntimeTestMessage> = {
+            let messages = app.world().resource::<Messages<RuntimeTestMessage>>();
+            message_cursor.read(messages).cloned().collect()
+        };
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0],
+            RuntimeTestMessage {
+                amount: 12,
+                label: "hello".to_string(),
+                tone: RuntimeTestTone::Urgent,
+            }
+        );
+
+        let mut advance_cursor = MessageCursor::<AdvanceDialogue>::default();
+        let advances: Vec<AdvanceDialogue> = {
+            let messages = app.world().resource::<Messages<AdvanceDialogue>>();
+            advance_cursor.read(messages).cloned().collect()
+        };
+        assert_eq!(advances.len(), 1);
+        assert_eq!(advances[0].entity, entity);
     }
 
     #[test]

@@ -176,7 +176,7 @@ pub fn display_dialogue(
                                 }
                             }
                         }
-                        DialogueNode::Effect { .. } => {
+                        DialogueNode::Effect { .. } | DialogueNode::Message { .. } => {
                             for mut speaker_text in speaker_query.iter_mut() {
                                 *speaker_text = Text::new("");
                             }

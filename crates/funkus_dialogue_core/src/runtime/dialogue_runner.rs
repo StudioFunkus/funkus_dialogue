@@ -42,7 +42,7 @@ pub enum DialogueState {
     Inactive,
     /// Dialogue is displaying text
     ShowingText,
-    /// Dialogue is processing a non-visual effect node
+    /// Dialogue is processing a non-visual action node (effect/message)
     ProcessingEffect,
     /// Dialogue is waiting for player to select a choice
     WaitingForChoice,
@@ -257,7 +257,9 @@ impl DialogueRunner {
         self.state = match start_node {
             DialogueNode::Text { .. } => DialogueState::ShowingText,
             DialogueNode::Choice { .. } => DialogueState::WaitingForChoice,
-            DialogueNode::Effect { .. } => DialogueState::ProcessingEffect,
+            DialogueNode::Effect { .. } | DialogueNode::Message { .. } => {
+                DialogueState::ProcessingEffect
+            }
         };
 
         self.auto_advance_timer.reset();
@@ -325,7 +327,9 @@ impl DialogueRunner {
             .ok_or(DialogueError::NodeNotFound(current_id))?;
 
         match current_node {
-            DialogueNode::Text { .. } | DialogueNode::Effect { .. } => {
+            DialogueNode::Text { .. }
+            | DialogueNode::Effect { .. }
+            | DialogueNode::Message { .. } => {
                 // Get connections from the graph instead of the node
                 let connections = dialogue.graph.get_connected_nodes(current_id);
 
@@ -345,7 +349,7 @@ impl DialogueRunner {
                     match next_node {
                         DialogueNode::Text { .. } => self.state = DialogueState::ShowingText,
                         DialogueNode::Choice { .. } => self.state = DialogueState::WaitingForChoice,
-                        DialogueNode::Effect { .. } => {
+                        DialogueNode::Effect { .. } | DialogueNode::Message { .. } => {
                             self.state = DialogueState::ProcessingEffect;
                         }
                     }
@@ -389,7 +393,7 @@ impl DialogueRunner {
                     match next_node {
                         DialogueNode::Text { .. } => self.state = DialogueState::ShowingText,
                         DialogueNode::Choice { .. } => self.state = DialogueState::WaitingForChoice,
-                        DialogueNode::Effect { .. } => {
+                        DialogueNode::Effect { .. } | DialogueNode::Message { .. } => {
                             self.state = DialogueState::ProcessingEffect;
                         }
                     }

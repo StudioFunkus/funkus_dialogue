@@ -155,7 +155,9 @@ impl DialogueNodeEditorState {
 
         let connections = graph.get_connected_nodes(node_id);
         let output_count = match node {
-            DialogueNode::Text { .. } | DialogueNode::Effect { .. } => 1,
+            DialogueNode::Text { .. }
+            | DialogueNode::Effect { .. }
+            | DialogueNode::Message { .. } => 1,
             DialogueNode::Choice { .. } => {
                 let count = connections.len();
                 if count == 0 { 1 } else { count + 1 }
@@ -256,6 +258,7 @@ pub fn draw_dialogue_node_editor(
     let mut add_text_node = false;
     let mut add_choice_node = false;
     let mut add_effect_node = false;
+    let mut add_message_node = false;
 
     ui.horizontal(|ui| {
         if ui.button("Add Text Node").clicked() {
@@ -268,6 +271,10 @@ pub fn draw_dialogue_node_editor(
 
         if ui.button("Add Effect Node").clicked() {
             add_effect_node = true;
+        }
+
+        if ui.button("Add Message Node").clicked() {
+            add_message_node = true;
         }
     });
 
@@ -309,6 +316,19 @@ pub fn draw_dialogue_node_editor(
                 DialogueNode::effect(funkus_dialogue_core::registry::DialogueEffect::set(
                     "game.flag",
                     funkus_dialogue_core::registry::DialogueValue::Bool(true),
+                )),
+            );
+            dirty = true;
+        }
+
+        if add_message_node {
+            spawn_node(
+                graph,
+                snarl,
+                graph_to_snarl,
+                spawn_index,
+                DialogueNode::message(funkus_dialogue_core::registry::DialogueMessageCall::new(
+                    "game.message",
                 )),
             );
             dirty = true;
@@ -413,7 +433,9 @@ impl<'a> DialogueSnarlViewer<'a> {
 
     fn output_count(&self, id: NodeId) -> usize {
         match self.node_kind(id) {
-            Some(DialogueNode::Text { .. }) | Some(DialogueNode::Effect { .. }) => 1,
+            Some(DialogueNode::Text { .. })
+            | Some(DialogueNode::Effect { .. })
+            | Some(DialogueNode::Message { .. }) => 1,
             Some(DialogueNode::Choice { .. }) => {
                 let count = sorted_connections(self.graph, id).len();
                 if count == 0 {
@@ -428,7 +450,9 @@ impl<'a> DialogueSnarlViewer<'a> {
 
     fn output_label(&self, id: NodeId, output_index: usize) -> OutputLabel {
         match self.node_kind(id) {
-            Some(DialogueNode::Text { .. }) | Some(DialogueNode::Effect { .. }) => OutputLabel {
+            Some(DialogueNode::Text { .. })
+            | Some(DialogueNode::Effect { .. })
+            | Some(DialogueNode::Message { .. }) => OutputLabel {
                 short: "Next".to_string(),
                 full: None,
                 is_add_slot: false,
@@ -504,6 +528,9 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
             }
             Some(DialogueNode::Effect { .. }) => {
                 format!("Node #{} (Effect)", node.graph_id.raw())
+            }
+            Some(DialogueNode::Message { .. }) => {
+                format!("Node #{} (Message)", node.graph_id.raw())
             }
             None => format!("Node #{} (Missing)", node.graph_id.raw()),
         }
@@ -738,6 +765,18 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
             self.dirty = true;
             ui.close();
         }
+        if ui.button("Message").clicked() {
+            let node_id = self.graph.add_node(DialogueNode::message(
+                funkus_dialogue_core::registry::DialogueMessageCall::new("game.message"),
+            ));
+            self.add_snarl_node(snarl, node_id, pos);
+            self.bump_spawn_index();
+            if self.graph.start_node.is_none() {
+                let _ = self.graph.set_start_node(node_id);
+            }
+            self.dirty = true;
+            ui.close();
+        }
     }
 
     fn connect(&mut self, from: &OutPin, to: &InPin, snarl: &mut Snarl<DialogueNodeView>) {
@@ -754,7 +793,11 @@ impl SnarlViewer<DialogueNodeView> for DialogueSnarlViewer<'_> {
 
         let is_text_node = matches!(
             self.node_kind(from_graph),
-            Some(DialogueNode::Text { .. } | DialogueNode::Effect { .. })
+            Some(
+                DialogueNode::Text { .. }
+                    | DialogueNode::Effect { .. }
+                    | DialogueNode::Message { .. }
+            )
         );
 
         if is_text_node {

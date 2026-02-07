@@ -28,7 +28,7 @@ use super::ConnectionData;
 use super::node::NodeId;
 use super::nodes::DialogueNode;
 use crate::DialogueValue;
-use crate::registry::DialogueEffect;
+use crate::registry::{DialogueEffect, DialogueMessageCall};
 
 /// Represents a complete dialogue graph with nodes, connections, and metadata.
 ///
@@ -73,6 +73,8 @@ impl Serialize for DialogueGraph {
             portrait: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             effect: Option<DialogueEffect>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            message: Option<DialogueMessageCall>,
         }
 
         #[derive(Serialize)]
@@ -98,10 +100,19 @@ impl Serialize for DialogueGraph {
         for index in self.graph.node_indices() {
             if let Some(node) = self.graph.node_weight(index) {
                 let node_id = NodeId::from_index(index);
-                let (node_type, text, prompt, effect) = match node {
-                    DialogueNode::Text { text, .. } => ("Text", Some(text.clone()), None, None),
-                    DialogueNode::Choice { prompt, .. } => ("Choice", None, prompt.clone(), None),
-                    DialogueNode::Effect { effect } => ("Effect", None, None, Some(effect.clone())),
+                let (node_type, text, prompt, effect, message) = match node {
+                    DialogueNode::Text { text, .. } => {
+                        ("Text", Some(text.clone()), None, None, None)
+                    }
+                    DialogueNode::Choice { prompt, .. } => {
+                        ("Choice", None, prompt.clone(), None, None)
+                    }
+                    DialogueNode::Effect { effect } => {
+                        ("Effect", None, None, Some(effect.clone()), None)
+                    }
+                    DialogueNode::Message { message } => {
+                        ("Message", None, None, None, Some(message.clone()))
+                    }
                 };
                 let (speaker, portrait) = match node {
                     DialogueNode::Text {
@@ -110,7 +121,7 @@ impl Serialize for DialogueGraph {
                     | DialogueNode::Choice {
                         speaker, portrait, ..
                     } => (speaker.clone(), portrait.clone()),
-                    DialogueNode::Effect { .. } => (None, None),
+                    DialogueNode::Effect { .. } | DialogueNode::Message { .. } => (None, None),
                 };
 
                 nodes.push(SerialNode {
@@ -121,6 +132,7 @@ impl Serialize for DialogueGraph {
                     speaker,
                     portrait,
                     effect,
+                    message,
                 });
             }
         }
@@ -175,6 +187,7 @@ impl<'de> Deserialize<'de> for DialogueGraph {
             speaker: Option<String>,
             portrait: Option<String>,
             effect: Option<DialogueEffect>,
+            message: Option<DialogueMessageCall>,
         }
 
         #[derive(Deserialize)]
@@ -216,6 +229,12 @@ impl<'de> Deserialize<'de> for DialogueGraph {
                         DialogueEffect::set("game.flag", DialogueValue::Bool(true))
                     });
                     DialogueNode::effect(effect)
+                }
+                "Message" => {
+                    let message = node_data
+                        .message
+                        .unwrap_or_else(|| DialogueMessageCall::new("game.message"));
+                    DialogueNode::message(message)
                 }
                 // Ignore unknown variants so assets remain forward-compatible
                 _ => continue,

@@ -58,3 +58,32 @@ List operations:
 - `push`: append one item
 - `remove`: remove first matching item
 - `clear`: remove all items
+
+## Message Nodes
+
+In addition to effects, dialogues can dispatch typed Bevy messages.
+
+```rust,ignore
+use bevy::prelude::*;
+use funkus_dialogue_core::DialogueMessage;
+
+#[derive(Message, Reflect, FromReflect, DialogueMessage)]
+#[dialogue(key = "game.quest_step")]
+struct QuestStepMessage {
+    quest_id: String,
+    step: i32,
+}
+```
+
+```json
+{
+  "type": "Message",
+  "message": {
+    "key": "game.quest_step",
+    "params": [
+      { "name": "quest_id", "value": { "type": "string", "value": "intro" } },
+      { "name": "step", "value": { "type": "int", "value": 2 } }
+    ]
+  }
+}
+```

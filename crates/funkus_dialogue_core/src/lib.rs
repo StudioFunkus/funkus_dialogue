@@ -100,11 +100,13 @@ pub use events::{
     AdvanceDialogue, DialogueChoiceMade, DialogueEnded, DialogueNodeActivated, DialogueStarted,
     SelectDialogueChoice, StartDialogue, StopDialogue,
 };
-pub use funkus_dialogue_derive::DialogueResource;
+pub use funkus_dialogue_derive::{DialogueMessage, DialogueResource};
 pub use graph::{Connection, DialogueGraph, DialogueNode, NodeId};
 pub use registry::{
-    DialogueEffect, DialogueOperation, DialogueRegistry, DialogueRegistryPlugin, DialogueResource,
-    DialogueResourceTypeData, DialogueValue,
+    DialogueEffect, DialogueMessage, DialogueMessageCall, DialogueMessageDefinition,
+    DialogueMessageError, DialogueMessageField, DialogueMessageParam, DialogueMessageRegistry,
+    DialogueMessageRegistryPlugin, DialogueMessageTypeData, DialogueOperation, DialogueRegistry,
+    DialogueRegistryPlugin, DialogueResource, DialogueResourceTypeData, DialogueValue,
 };
 pub use runtime::{DialogueRunner, DialogueState};
 
@@ -144,6 +146,7 @@ impl Plugin for DialoguePlugin {
         app.register_type::<graph::NodeId>()
             .register_type::<runtime::DialogueState>()
             .register_type::<registry::DialogueEffect>()
+            .register_type::<registry::DialogueMessageCall>()
             .register_type::<registry::DialogueValue>()
             .add_plugins(bevy_common_assets::json::JsonAssetPlugin::<
                 asset::DialogueAsset,
@@ -161,7 +164,10 @@ impl Plugin for DialoguePlugin {
 
         // Set up dialogue systems
         runtime::setup_dialogue_systems(app);
-        app.add_plugins(registry::DialogueRegistryPlugin);
+        app.add_plugins((
+            registry::DialogueRegistryPlugin,
+            registry::DialogueMessageRegistryPlugin,
+        ));
     }
 }
 

@@ -5,6 +5,7 @@
 
 mod body_choice;
 mod body_effect;
+mod body_message;
 mod body_text;
 
 use bevy_egui::egui::Ui;
@@ -12,6 +13,7 @@ use funkus_dialogue_core::graph::DialogueNode;
 
 use self::body_choice::ChoiceBodyWidget;
 use self::body_effect::EffectBodyWidget;
+use self::body_message::MessageBodyWidget;
 use self::body_text::TextBodyWidget;
 
 /// Input data used to render a node body.
@@ -32,6 +34,7 @@ pub struct NodeBodyWidget {
     text: TextBodyWidget,
     choice: ChoiceBodyWidget,
     effect: EffectBodyWidget,
+    message: MessageBodyWidget,
 }
 
 impl NodeBodyWidget {
@@ -56,6 +59,7 @@ impl NodeBodyWidget {
                 data.body_max_chars,
             ),
             DialogueNode::Effect { effect } => self.effect.show(ui, effect, data.body_width),
+            DialogueNode::Message { message } => self.message.show(ui, message, data.body_width),
         }
     }
 }

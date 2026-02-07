@@ -18,3 +18,10 @@ Applies a registry-backed resource change and advances automatically.
 
 Effect nodes are data-only: they do not render UI. Use them to update game
 state as the dialogue flows (quest flags, counters, etc.).
+
+## Message Node
+
+Dispatches a registered Bevy message and advances automatically.
+
+Use them to invoke game-specific logic through Bevy `MessageReader<T>`
+systems.

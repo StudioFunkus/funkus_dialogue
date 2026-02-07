@@ -13,8 +13,14 @@ use bevy::reflect::{ArrayInfo, ListInfo, ReflectFromPtr, TypeInfo};
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
+mod message;
 mod value;
 
+pub use message::{
+    DialogueMessage, DialogueMessageCall, DialogueMessageDefinition, DialogueMessageError,
+    DialogueMessageField, DialogueMessageParam, DialogueMessageRegistration,
+    DialogueMessageRegistry, DialogueMessageRegistryPlugin, DialogueMessageTypeData,
+};
 pub use value::{DialogueEffect, DialogueOperation, DialogueValue, DialogueValueKind};
 
 /// Marker trait for resources that should be included in the dialogue registry.
@@ -334,7 +340,7 @@ fn build_registry_from_reflection(
     }
 }
 
-fn detect_field_kind(type_info: &'static TypeInfo) -> Option<DialogueFieldKind> {
+pub(crate) fn detect_field_kind(type_info: &'static TypeInfo) -> Option<DialogueFieldKind> {
     if type_info.type_id() == TypeId::of::<bool>() {
         return Some(DialogueFieldKind::Bool);
     }
@@ -367,13 +373,13 @@ fn detect_field_kind(type_info: &'static TypeInfo) -> Option<DialogueFieldKind> 
     }
 }
 
-fn detect_list_kind(list_info: &ListInfo) -> Option<DialogueFieldKind> {
+pub(crate) fn detect_list_kind(list_info: &ListInfo) -> Option<DialogueFieldKind> {
     list_info
         .item_info()
         .and_then(|info| detect_field_kind(info))
 }
 
-fn detect_array_kind(array_info: &ArrayInfo) -> Option<DialogueFieldKind> {
+pub(crate) fn detect_array_kind(array_info: &ArrayInfo) -> Option<DialogueFieldKind> {
     let element = array_info
         .item_info()
         .and_then(|info| detect_field_kind(info))?;
@@ -383,7 +389,7 @@ fn detect_array_kind(array_info: &ArrayInfo) -> Option<DialogueFieldKind> {
     })
 }
 
-fn detect_enum_kind(enum_info: &bevy::reflect::EnumInfo) -> Option<DialogueFieldKind> {
+pub(crate) fn detect_enum_kind(enum_info: &bevy::reflect::EnumInfo) -> Option<DialogueFieldKind> {
     let mut variants = Vec::new();
     for name in enum_info.variant_names() {
         let Some(variant) = enum_info.variant(name) else {
