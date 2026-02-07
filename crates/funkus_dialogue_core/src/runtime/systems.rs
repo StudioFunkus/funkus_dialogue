@@ -111,9 +111,6 @@ pub fn handle_start_dialogue_events(
             );
             continue;
         };
-
-        runner.dialogue_handle = ev.dialogue_handle.clone();
-
         let Some(dialogue) = dialogue_assets.get(&ev.dialogue_handle) else {
             warn!(
                 "Ignoring StartDialogue for {:?}: dialogue asset is not loaded yet",
@@ -124,6 +121,7 @@ pub fn handle_start_dialogue_events(
 
         match runner.start(dialogue) {
             Ok(()) => {
+                runner.dialogue_handle = ev.dialogue_handle.clone();
                 if let Some(node_id) = runner.current_node_id {
                     node_activated_events.write(crate::events::DialogueNodeActivated {
                         entity: ev.entity,
@@ -413,7 +411,7 @@ mod tests {
         DialogueEffect, DialogueMessageCall, DialogueMessageRegistryPlugin, DialogueOperation,
         DialogueRegistry, DialogueValue,
     };
-    use crate::runtime::{DialogueRunner, setup_dialogue_systems};
+    use crate::runtime::{DialogueRunner, DialogueState, setup_dialogue_systems};
 
     #[derive(Resource, Reflect, crate::DialogueResource, Default)]
     #[dialogue(key = "runtime_test")]
@@ -531,6 +529,56 @@ mod tests {
         assert_eq!(activated_on_advance.len(), 1);
         assert_eq!(activated_on_advance[0].entity, entity);
         assert_eq!(activated_on_advance[0].node_id, next);
+    }
+
+    #[test]
+    fn start_dialogue_is_noop_when_asset_is_not_loaded() {
+        let mut app = init_runtime_test_app();
+
+        let mut graph = DialogueGraph::new();
+        let start = graph.add_node(DialogueNode::text("Existing"));
+        graph.set_start_node(start).expect("set start");
+        let existing_handle = app
+            .world_mut()
+            .resource_mut::<Assets<DialogueAsset>>()
+            .add(DialogueAsset::new(graph));
+
+        let entity = app
+            .world_mut()
+            .spawn(DialogueRunner::new(existing_handle.clone()))
+            .id();
+
+        app.world_mut()
+            .resource_mut::<Messages<StartDialogue>>()
+            .write(StartDialogue {
+                entity,
+                dialogue_handle: Handle::<DialogueAsset>::default(),
+            });
+
+        let mut started_cursor = MessageCursor::<DialogueStarted>::default();
+        let mut activated_cursor = MessageCursor::<DialogueNodeActivated>::default();
+
+        app.update();
+
+        let started: Vec<DialogueStarted> = {
+            let messages = app.world().resource::<Messages<DialogueStarted>>();
+            started_cursor.read(messages).cloned().collect()
+        };
+        assert!(started.is_empty());
+
+        let activated: Vec<DialogueNodeActivated> = {
+            let messages = app.world().resource::<Messages<DialogueNodeActivated>>();
+            activated_cursor.read(messages).cloned().collect()
+        };
+        assert!(activated.is_empty());
+
+        let runner = app
+            .world()
+            .get::<DialogueRunner>(entity)
+            .expect("runner should still exist");
+        assert_eq!(runner.dialogue_handle, existing_handle);
+        assert_eq!(runner.state, DialogueState::Inactive);
+        assert!(runner.current_node_id.is_none());
     }
 
     #[test]
