@@ -1,5 +1,6 @@
 //! Comprehensive editor + preview example.
 
+use bevy::ecs::schedule::common_conditions::resource_changed;
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use funkus_dialogue_core::*;
@@ -132,8 +133,12 @@ fn main() {
         .init_resource::<PreviewContext>()
         .init_resource::<PreviewRequest>()
         .init_state::<AppState>()
+        .add_systems(Startup, spawn_state_debug_ui)
         .add_systems(Update, apply_example_dialogue_messages)
-        .add_systems(Update, update_state_debug_ui)
+        .add_systems(
+            Update,
+            update_state_debug_ui.run_if(resource_changed::<ExampleState>),
+        )
         .add_systems(Update, update_message_debug_ui)
         .add_systems(Update, editor_controls.run_if(in_state(AppState::Editor)))
         .add_systems(Update, begin_preview.run_if(in_state(AppState::Editor)))
@@ -311,33 +316,7 @@ struct StateDebugText;
 #[derive(Component)]
 struct MessageDebugText;
 
-fn update_state_debug_ui(
-    mut commands: Commands,
-    state: Res<ExampleState>,
-    mut query: Query<&mut Text, With<StateDebugText>>,
-) {
-    if query.is_empty() {
-        commands.spawn((
-            Text::new("State"),
-            TextFont {
-                font_size: 16.0,
-                ..default()
-            },
-            TextColor(Color::WHITE),
-            Node {
-                position_type: PositionType::Absolute,
-                top: Val::Px(10.0),
-                right: Val::Px(10.0),
-                ..default()
-            },
-            StateDebugText,
-        ));
-    }
-
-    if !state.is_changed() {
-        return;
-    }
-
+fn format_state_debug_text(state: &ExampleState) -> String {
     let inventory = if state.inventory.is_empty() {
         "(empty)".to_string()
     } else {
@@ -349,11 +328,35 @@ fn update_state_debug_ui(
             .join(", ")
     };
 
-    let formatted = format!(
+    format!(
         "State\n- gold: {}\n- reputation: {:.2}\n- met_npc: {}\n- title: {}\n- inventory: {}\n- mood: {:?}",
         state.gold, state.reputation, state.met_npc, state.title, inventory, state.mood
-    );
+    )
+}
 
+fn spawn_state_debug_ui(mut commands: Commands, state: Res<ExampleState>) {
+    commands.spawn((
+        Text::new(format_state_debug_text(&state)),
+        TextFont {
+            font_size: 16.0,
+            ..default()
+        },
+        TextColor(Color::WHITE),
+        Node {
+            position_type: PositionType::Absolute,
+            top: Val::Px(10.0),
+            right: Val::Px(10.0),
+            ..default()
+        },
+        StateDebugText,
+    ));
+}
+
+fn update_state_debug_ui(
+    state: Res<ExampleState>,
+    mut query: Query<&mut Text, With<StateDebugText>>,
+) {
+    let formatted = format_state_debug_text(&state);
     for mut text in &mut query {
         *text = Text::new(formatted.clone());
     }
