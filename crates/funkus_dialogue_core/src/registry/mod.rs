@@ -551,14 +551,16 @@ fn apply_int(
     if let Some(target) = field.try_downcast_mut::<i64>() {
         apply_numeric_int(target, op, value)
     } else if let Some(target) = field.try_downcast_mut::<i32>() {
-        let mut temp = *target as i64;
+        let mut temp = i64::from(*target);
         apply_numeric_int(&mut temp, op, value)?;
-        *target = temp as i32;
+        *target = i32::try_from(temp)
+            .map_err(|_| DialogueRegistryError::TypeMismatch("int".to_string()))?;
         Ok(())
     } else if let Some(target) = field.try_downcast_mut::<u32>() {
-        let mut temp = *target as i64;
+        let mut temp = i64::from(*target);
         apply_numeric_int(&mut temp, op, value)?;
-        *target = temp.max(0) as u32;
+        *target = u32::try_from(temp)
+            .map_err(|_| DialogueRegistryError::TypeMismatch("int".to_string()))?;
         Ok(())
     } else {
         Err(DialogueRegistryError::TypeMismatch("int".to_string()))
@@ -575,8 +577,16 @@ fn apply_numeric_int(
     };
     match op {
         DialogueOperation::Set => *target = *v,
-        DialogueOperation::Add => *target += *v,
-        DialogueOperation::Subtract => *target -= *v,
+        DialogueOperation::Add => {
+            *target = target
+                .checked_add(*v)
+                .ok_or_else(|| DialogueRegistryError::TypeMismatch("int".to_string()))?;
+        }
+        DialogueOperation::Subtract => {
+            *target = target
+                .checked_sub(*v)
+                .ok_or_else(|| DialogueRegistryError::TypeMismatch("int".to_string()))?;
+        }
         _ => return Err(DialogueRegistryError::InvalidOperation("int".to_string())),
     }
     Ok(())
@@ -790,13 +800,41 @@ fn value_to_reflect(
 mod tests {
     use bevy::prelude::*;
 
-    use super::{DialogueRegistry, DialogueRegistryPlugin};
+    use super::{
+        DialogueEffect, DialogueOperation, DialogueRegistry, DialogueRegistryPlugin, DialogueValue,
+        apply_effect_with_field_and_reflect, resolve_reflect_from_ptr,
+    };
 
     #[derive(Resource, Reflect, crate::DialogueResource)]
     #[dialogue(key = "auto_registry")]
     struct AutoRegistryState {
         gold: i32,
         met_npc: bool,
+    }
+
+    #[derive(Resource, Reflect, crate::DialogueResource)]
+    #[dialogue(key = "numeric_registry")]
+    struct NumericRegistryState {
+        signed: i32,
+        unsigned: u32,
+    }
+
+    fn apply_numeric_effect(
+        app: &mut App,
+        effect: DialogueEffect,
+    ) -> Result<(), super::DialogueRegistryError> {
+        let field = app
+            .world()
+            .resource::<DialogueRegistry>()
+            .field(&effect.key)
+            .cloned()
+            .expect("field should exist");
+        let reflect_from_ptr = {
+            let app_registry = app.world().resource::<AppTypeRegistry>();
+            let type_registry = app_registry.read();
+            resolve_reflect_from_ptr(&type_registry, &field).expect("reflect data should exist")
+        };
+        apply_effect_with_field_and_reflect(app.world_mut(), &field, &reflect_from_ptr, &effect)
     }
 
     #[test]
@@ -808,5 +846,87 @@ mod tests {
         let registry = app.world().resource::<DialogueRegistry>();
         assert!(registry.field("auto_registry.gold").is_some());
         assert!(registry.field("auto_registry.met_npc").is_some());
+    }
+
+    #[test]
+    fn i32_effects_reject_out_of_range_values_without_wrapping() {
+        let mut app = App::new();
+        app.add_plugins(DialogueRegistryPlugin)
+            .insert_resource(NumericRegistryState {
+                signed: i32::MAX,
+                unsigned: 0,
+            });
+        app.update();
+
+        let result = apply_numeric_effect(
+            &mut app,
+            DialogueEffect {
+                key: "numeric_registry.signed".to_string(),
+                op: DialogueOperation::Add,
+                value: DialogueValue::Int(1),
+            },
+        );
+        assert!(result.is_err());
+
+        let state = app.world().resource::<NumericRegistryState>();
+        assert_eq!(state.signed, i32::MAX);
+    }
+
+    #[test]
+    fn u32_effects_reject_negative_results_without_wrapping() {
+        let mut app = App::new();
+        app.add_plugins(DialogueRegistryPlugin)
+            .insert_resource(NumericRegistryState {
+                signed: 0,
+                unsigned: 0,
+            });
+        app.update();
+
+        let result = apply_numeric_effect(
+            &mut app,
+            DialogueEffect {
+                key: "numeric_registry.unsigned".to_string(),
+                op: DialogueOperation::Subtract,
+                value: DialogueValue::Int(1),
+            },
+        );
+        assert!(result.is_err());
+
+        let state = app.world().resource::<NumericRegistryState>();
+        assert_eq!(state.unsigned, 0);
+    }
+
+    #[test]
+    fn integer_effects_accept_in_range_boundaries() {
+        let mut app = App::new();
+        app.add_plugins(DialogueRegistryPlugin)
+            .insert_resource(NumericRegistryState {
+                signed: 0,
+                unsigned: 0,
+            });
+        app.update();
+
+        apply_numeric_effect(
+            &mut app,
+            DialogueEffect {
+                key: "numeric_registry.signed".to_string(),
+                op: DialogueOperation::Set,
+                value: DialogueValue::Int(i64::from(i32::MAX)),
+            },
+        )
+        .expect("i32 max should be accepted");
+        apply_numeric_effect(
+            &mut app,
+            DialogueEffect {
+                key: "numeric_registry.unsigned".to_string(),
+                op: DialogueOperation::Set,
+                value: DialogueValue::Int(i64::from(u32::MAX)),
+            },
+        )
+        .expect("u32 max should be accepted");
+
+        let state = app.world().resource::<NumericRegistryState>();
+        assert_eq!(state.signed, i32::MAX);
+        assert_eq!(state.unsigned, u32::MAX);
     }
 }

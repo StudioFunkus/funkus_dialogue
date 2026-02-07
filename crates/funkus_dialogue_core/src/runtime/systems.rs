@@ -322,31 +322,41 @@ fn apply_dialogue_actions(world: &mut World) {
                     .resource::<DialogueRegistry>()
                     .field(&effect.key)
                     .cloned();
-                let Some(field) = field else {
-                    warn!("Dialogue effect key {} is not registered", effect.key);
-                    continue;
-                };
+                if let Some(field) = field {
+                    let reflect_from_ptr = {
+                        let type_registry = world.resource::<AppTypeRegistry>();
+                        let type_registry = type_registry.read();
+                        crate::registry::resolve_reflect_from_ptr(&type_registry, &field)
+                    };
 
-                let reflect_from_ptr = {
-                    let type_registry = world.resource::<AppTypeRegistry>();
-                    let type_registry = type_registry.read();
-                    crate::registry::resolve_reflect_from_ptr(&type_registry, &field)
-                };
-
-                let Ok(reflect_from_ptr) = reflect_from_ptr else {
-                    error!("Missing ReflectFromPtr for {}", effect.key);
-                    continue;
-                };
-
-                if let Err(err) = crate::registry::apply_effect_with_field_and_reflect(
-                    world,
-                    &field,
-                    &reflect_from_ptr,
-                    &effect,
-                ) {
-                    error!("Failed to apply dialogue effect {}: {}", effect.key, err);
-                    continue;
+                    match reflect_from_ptr {
+                        Ok(reflect_from_ptr) => {
+                            if let Err(err) = crate::registry::apply_effect_with_field_and_reflect(
+                                world,
+                                &field,
+                                &reflect_from_ptr,
+                                &effect,
+                            ) {
+                                warn!(
+                                    "Failed to apply dialogue effect {}: {}; advancing anyway",
+                                    effect.key, err
+                                );
+                            }
+                        }
+                        Err(err) => {
+                            warn!(
+                                "Missing reflection metadata for dialogue effect {}: {}; advancing anyway",
+                                effect.key, err
+                            );
+                        }
+                    }
+                } else {
+                    warn!(
+                        "Dialogue effect key {} is not registered; advancing anyway",
+                        effect.key
+                    );
                 }
+
                 world
                     .resource_mut::<Messages<AdvanceDialogue>>()
                     .write(AdvanceDialogue { entity });
@@ -359,21 +369,20 @@ fn apply_dialogue_actions(world: &mut World) {
                 let dispatch = world
                     .get_resource::<DialogueMessageRegistry>()
                     .and_then(|registry| registry.dispatch_fn(&message.key));
-                let Some(dispatch) = dispatch else {
+                if let Some(dispatch) = dispatch {
+                    if let Err(err) = dispatch(world, &message) {
+                        warn!(
+                            "Failed to dispatch dialogue message {}: {}; advancing anyway",
+                            message.key, err
+                        );
+                    }
+                } else {
                     warn!(
-                        "Dialogue message key {} is not registered or message registry is unavailable",
+                        "Dialogue message key {} is not registered or message registry is unavailable; advancing anyway",
                         message.key
                     );
-                    continue;
-                };
-
-                if let Err(err) = dispatch(world, &message) {
-                    error!(
-                        "Failed to dispatch dialogue message {}: {}",
-                        message.key, err
-                    );
-                    continue;
                 }
+
                 world
                     .resource_mut::<Messages<AdvanceDialogue>>()
                     .write(AdvanceDialogue { entity });
@@ -433,6 +442,7 @@ mod tests {
     use bevy::ecs::message::{MessageCursor, Messages};
     use bevy::prelude::*;
 
+    use crate::DialogueMessage;
     use crate::asset::DialogueAsset;
     use crate::events::{
         AdvanceDialogue, DialogueChoiceMade, DialogueEnded, DialogueNodeActivated, DialogueStarted,
@@ -457,7 +467,7 @@ mod tests {
         Urgent,
     }
 
-    #[derive(Message, Clone, Debug, PartialEq, Reflect, crate::DialogueMessage)]
+    #[derive(Message, Clone, Debug, PartialEq, Reflect, DialogueMessage)]
     #[dialogue(key = "runtime_test.message")]
     struct RuntimeTestMessage {
         amount: i32,
@@ -720,7 +730,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_effect_keys_do_not_mutate_resources_or_auto_advance() {
+    fn unknown_effect_keys_do_not_mutate_resources_and_still_auto_advance() {
         let mut app = init_runtime_test_app();
         app.insert_resource(RuntimeTestState { value: 10 });
 
@@ -754,7 +764,8 @@ mod tests {
             let messages = app.world().resource::<Messages<AdvanceDialogue>>();
             advance_cursor.read(messages).cloned().collect()
         };
-        assert!(advances.is_empty());
+        assert_eq!(advances.len(), 1);
+        assert_eq!(advances[0].entity, entity);
     }
 
     #[test]
@@ -799,6 +810,50 @@ mod tests {
                 tone: RuntimeTestTone::Urgent,
             }
         );
+
+        let mut advance_cursor = MessageCursor::<AdvanceDialogue>::default();
+        let advances: Vec<AdvanceDialogue> = {
+            let messages = app.world().resource::<Messages<AdvanceDialogue>>();
+            advance_cursor.read(messages).cloned().collect()
+        };
+        assert_eq!(advances.len(), 1);
+        assert_eq!(advances[0].entity, entity);
+    }
+
+    #[test]
+    fn invalid_message_payloads_do_not_dispatch_and_still_auto_advance() {
+        let mut app = init_runtime_test_app();
+
+        let mut graph = DialogueGraph::new();
+        let start = graph.add_node(DialogueNode::message(
+            DialogueMessageCall::new("runtime_test.message")
+                .with_param("amount", DialogueValue::Int(i64::from(i32::MAX) + 1))
+                .with_param("label", DialogueValue::String("bad".to_string()))
+                .with_param("tone", DialogueValue::Enum("Calm".to_string())),
+        ));
+        graph.set_start_node(start).expect("set start");
+
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<DialogueAsset>>()
+            .add(DialogueAsset::new(graph));
+        let entity = app.world_mut().spawn(DialogueRunner::default()).id();
+
+        app.world_mut()
+            .resource_mut::<Messages<StartDialogue>>()
+            .write(StartDialogue {
+                entity,
+                dialogue_handle: handle,
+            });
+
+        app.update();
+
+        let mut message_cursor = MessageCursor::<RuntimeTestMessage>::default();
+        let sent: Vec<RuntimeTestMessage> = {
+            let messages = app.world().resource::<Messages<RuntimeTestMessage>>();
+            message_cursor.read(messages).cloned().collect()
+        };
+        assert!(sent.is_empty());
 
         let mut advance_cursor = MessageCursor::<AdvanceDialogue>::default();
         let advances: Vec<AdvanceDialogue> = {

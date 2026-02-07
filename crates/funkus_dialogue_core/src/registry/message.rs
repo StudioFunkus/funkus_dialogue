@@ -470,17 +470,18 @@ fn value_to_reflect_value(
         let DialogueValue::Int(v) = value else {
             return Err(invalid_value_type(message_key, field_name, type_info));
         };
-        return Ok(Box::new(*v as i32));
+        let converted = i32::try_from(*v)
+            .map_err(|_| invalid_value_type(message_key, field_name, type_info))?;
+        return Ok(Box::new(converted));
     }
 
     if type_info.type_id() == TypeId::of::<u32>() {
         let DialogueValue::Int(v) = value else {
             return Err(invalid_value_type(message_key, field_name, type_info));
         };
-        if *v < 0 {
-            return Err(invalid_value_type(message_key, field_name, type_info));
-        }
-        return Ok(Box::new(*v as u32));
+        let converted = u32::try_from(*v)
+            .map_err(|_| invalid_value_type(message_key, field_name, type_info))?;
+        return Ok(Box::new(converted));
     }
 
     if type_info.type_id() == TypeId::of::<f64>() {
@@ -668,7 +669,11 @@ mod tests {
     use bevy::ecs::message::{MessageCursor, Messages};
     use bevy::prelude::*;
 
-    use super::{DialogueMessageCall, DialogueMessageRegistry, DialogueMessageRegistryPlugin};
+    use super::{
+        DialogueMessageCall, DialogueMessageError, DialogueMessageRegistry,
+        DialogueMessageRegistryPlugin,
+    };
+    use crate::DialogueMessage;
     use crate::registry::DialogueValue;
 
     #[derive(Debug, Clone, PartialEq, Eq, Reflect)]
@@ -677,12 +682,18 @@ mod tests {
         Happy,
     }
 
-    #[derive(Message, Clone, Debug, PartialEq, Reflect, crate::DialogueMessage)]
+    #[derive(Message, Clone, Debug, PartialEq, Reflect, DialogueMessage)]
     #[dialogue(key = "auto_message")]
     struct AutoMessage {
         amount: i32,
         speaker: String,
         mood: AutoMessageMood,
+    }
+
+    #[derive(Message, Clone, Debug, PartialEq, Reflect, DialogueMessage)]
+    #[dialogue(key = "auto_unsigned_message")]
+    struct AutoUnsignedMessage {
+        amount: u32,
     }
 
     #[test]
@@ -731,5 +742,65 @@ mod tests {
                 mood: AutoMessageMood::Happy,
             }
         );
+    }
+
+    #[test]
+    fn registry_rejects_out_of_range_i32_values() {
+        let mut app = App::new();
+        app.add_plugins(DialogueMessageRegistryPlugin);
+        app.update();
+
+        let call = DialogueMessageCall::new("auto_message")
+            .with_param("amount", DialogueValue::Int(i64::from(i32::MAX) + 1))
+            .with_param("speaker", DialogueValue::String("Guide".to_string()))
+            .with_param("mood", DialogueValue::Enum("Happy".to_string()));
+
+        let dispatch = app
+            .world()
+            .resource::<DialogueMessageRegistry>()
+            .dispatch_fn("auto_message")
+            .expect("dispatch function exists");
+        let result = dispatch(app.world_mut(), &call);
+
+        assert!(matches!(
+            result,
+            Err(DialogueMessageError::InvalidValueType { .. })
+        ));
+
+        let mut cursor = MessageCursor::<AutoMessage>::default();
+        let sent: Vec<AutoMessage> = {
+            let messages = app.world().resource::<Messages<AutoMessage>>();
+            cursor.read(messages).cloned().collect()
+        };
+        assert!(sent.is_empty());
+    }
+
+    #[test]
+    fn registry_rejects_negative_u32_values() {
+        let mut app = App::new();
+        app.add_plugins(DialogueMessageRegistryPlugin);
+        app.update();
+
+        let call = DialogueMessageCall::new("auto_unsigned_message")
+            .with_param("amount", DialogueValue::Int(-1));
+
+        let dispatch = app
+            .world()
+            .resource::<DialogueMessageRegistry>()
+            .dispatch_fn("auto_unsigned_message")
+            .expect("dispatch function exists");
+        let result = dispatch(app.world_mut(), &call);
+
+        assert!(matches!(
+            result,
+            Err(DialogueMessageError::InvalidValueType { .. })
+        ));
+
+        let mut cursor = MessageCursor::<AutoUnsignedMessage>::default();
+        let sent: Vec<AutoUnsignedMessage> = {
+            let messages = app.world().resource::<Messages<AutoUnsignedMessage>>();
+            cursor.read(messages).cloned().collect()
+        };
+        assert!(sent.is_empty());
     }
 }
