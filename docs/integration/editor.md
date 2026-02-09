@@ -44,6 +44,9 @@ use funkus_dialogue_editor::DialogueEditorPlugin;
 fn main() {
     let mut app = App::new();
     app.add_plugins((DefaultPlugins, DialoguePlugin));
+    app.add_systems(Startup, |mut commands: Commands| {
+        commands.spawn((Camera::default(), Camera2d));
+    });
 
     #[cfg(feature = "editor")]
     app.add_plugins(DialogueEditorPlugin::with_assets_root("assets"));
@@ -86,6 +89,9 @@ App::new()
         file_path: "assets".to_string(),
         ..default()
     }))
+    .add_systems(Startup, |mut commands: Commands| {
+        commands.spawn((Camera::default(), Camera2d));
+    })
     .add_plugins(DialogueEditorPlugin::with_assets_root("assets"))
     .run();
 ```
@@ -109,6 +115,9 @@ struct GameState {
 App::new()
     .add_plugins(DialoguePlugin)
     .insert_resource(GameState { gold: 0, met_npc: false })
+    .add_systems(Startup, |mut commands: Commands| {
+        commands.spawn((Camera::default(), Camera2d));
+    })
     .add_plugins(DialogueEditorPlugin::default())
     .run();
 ```

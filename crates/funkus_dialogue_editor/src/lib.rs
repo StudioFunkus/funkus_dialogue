@@ -189,6 +189,9 @@ fn save_dialogue_to_disk(
 /// The editor assumes the same asset root as your `AssetPlugin::file_path`
 /// (default: `assets` relative to the working directory). Use
 /// [`DialogueEditorPlugin::with_assets_root`] if your asset root differs.
+///
+/// This plugin does not spawn cameras. The host app is responsible for spawning
+/// whatever camera setup it needs.
 #[derive(Default, Clone)]
 pub struct DialogueEditorPlugin {
     /// Optional override for the assets root directory used by the editor.
@@ -219,7 +222,6 @@ impl Plugin for DialogueEditorPlugin {
         app.init_resource::<EditorUiState>();
         app.add_message::<EditorCommand>();
         app.add_plugins(EguiPlugin::default());
-        app.add_systems(Startup, setup_editor_camera);
         app.add_systems(
             PreUpdate,
             snap_egui_scale_factor.before(EguiPreUpdateSet::ProcessInput),
@@ -233,10 +235,6 @@ impl Plugin for DialogueEditorPlugin {
         );
         app.add_systems(EguiPrimaryContextPass, draw_editor_ui);
     }
-}
-
-fn setup_editor_camera(mut commands: Commands) {
-    commands.spawn((Camera::default(), Camera2d));
 }
 
 fn snap_egui_scale_factor(mut contexts: Query<(&mut EguiContextSettings, &Camera)>) {

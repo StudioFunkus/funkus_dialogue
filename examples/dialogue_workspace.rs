@@ -133,7 +133,7 @@ fn main() {
         .init_resource::<PreviewContext>()
         .init_resource::<PreviewRequest>()
         .init_state::<AppState>()
-        .add_systems(Startup, spawn_state_debug_ui)
+        .add_systems(Startup, (spawn_workspace_camera, spawn_state_debug_ui))
         .add_systems(Update, apply_example_dialogue_messages)
         .add_systems(
             Update,
@@ -150,6 +150,10 @@ fn main() {
         .add_systems(OnEnter(AppState::Preview), enter_preview)
         .add_systems(OnExit(AppState::Preview), exit_preview)
         .run();
+}
+
+fn spawn_workspace_camera(mut commands: Commands) {
+    commands.spawn((Camera::default(), Camera2d));
 }
 
 fn apply_example_dialogue_messages(
