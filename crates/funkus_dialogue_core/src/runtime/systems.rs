@@ -7,7 +7,6 @@ use bevy::ecs::message::{MessageCursor, Messages};
 use bevy::prelude::*;
 use tracing::{error, warn};
 
-use crate::AdvanceDialogue;
 use crate::asset::DialogueAsset;
 use crate::registry::{DialogueMessageRegistry, DialogueRegistry};
 use crate::runtime::DialogueRunner;
@@ -20,14 +19,13 @@ use crate::runtime::DialogueState;
 /// - Auto-advancing text nodes when the timer completes
 /// - Handling other state updates
 ///
-/// Note: The system automatically skips runners with inactive state or
-/// runners whose dialogue assets haven't been loaded yet. It will silently
-/// continue processing other runners without errors.
+/// Note: The system automatically skips inactive runners and writes
+/// [`AdvanceDialogue`] requests for runners whose text timers complete.
 ///
 /// # System Parameters
 ///
 /// * `time` - The Bevy time resource for delta time
-/// * `dialogue_assets` - Assets resource containing loaded dialogue assets
+/// * `advance_events` - Writer used to enqueue `AdvanceDialogue` requests
 /// * `runner_query` - Query for DialogueRunner components
 ///
 /// # Example
@@ -42,30 +40,21 @@ use crate::runtime::DialogueState;
 /// ```
 pub fn update_dialogue_runners(
     time: Res<Time>,
-    dialogue_assets: Res<Assets<DialogueAsset>>,
-    mut runner_query: Query<&mut DialogueRunner>,
+    mut advance_events: MessageWriter<crate::events::AdvanceDialogue>,
+    mut runner_query: Query<(Entity, &mut DialogueRunner)>,
 ) {
-    for mut runner in runner_query.iter_mut() {
+    for (entity, mut runner) in runner_query.iter_mut() {
         // Skip inactive runners
         if runner.state == DialogueState::Inactive {
             continue;
         }
 
-        // Get the dialogue asset
-        let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) else {
-            // Asset not loaded yet
-            continue;
-        };
-
         // Auto-advance text nodes if enabled
         if runner.state == DialogueState::ShowingText && runner.auto_advance {
             runner.auto_advance_timer.tick(time.delta());
 
-            if runner.auto_advance_timer.is_finished()
-                && let Err(err) = runner.advance(dialogue)
-            {
-                error!("Error advancing dialogue: {}", err);
-                runner.state = DialogueState::Error(err.to_string());
+            if runner.auto_advance_timer.is_finished() {
+                advance_events.write(crate::events::AdvanceDialogue { entity });
             }
         }
     }
@@ -107,12 +96,77 @@ pub(crate) enum DialogueRuntimeAction {
 #[derive(Resource, Default)]
 struct DialogueActionCursor(MessageCursor<DialogueRuntimeAction>);
 
+fn is_presentable_node(node: &crate::graph::DialogueNode) -> bool {
+    matches!(
+        node,
+        crate::graph::DialogueNode::Text { .. } | crate::graph::DialogueNode::Choice { .. }
+    )
+}
+
+fn settle_runner_after_transition(
+    runner: &mut DialogueRunner,
+    dialogue: &DialogueAsset,
+    entity: Entity,
+    previous_node_id: Option<crate::graph::NodeId>,
+    node_activated_events: &mut MessageWriter<crate::events::DialogueNodeActivated>,
+    dialogue_ended_events: &mut MessageWriter<crate::events::DialogueEnded>,
+    runtime_actions: &mut MessageWriter<DialogueRuntimeAction>,
+) -> crate::DialogueResult<()> {
+    let mut previous_node_id = previous_node_id;
+    let mut visited_non_presentable = std::collections::HashSet::new();
+    let max_hops = dialogue.graph.node_count().max(1).saturating_mul(4);
+    let mut hops = 0usize;
+
+    loop {
+        if runner.state == DialogueState::Finished {
+            dialogue_ended_events.write(crate::events::DialogueEnded {
+                entity,
+                normal_exit: true,
+            });
+            return Ok(());
+        }
+
+        let Some(current_node_id) = runner.current_node_id else {
+            return Ok(());
+        };
+
+        if Some(current_node_id) != previous_node_id {
+            node_activated_events.write(crate::events::DialogueNodeActivated {
+                entity,
+                node_id: current_node_id,
+            });
+        }
+
+        let current_node = dialogue
+            .graph
+            .get_node(current_node_id)
+            .ok_or(crate::DialogueError::NodeNotFound(current_node_id))?;
+        if is_presentable_node(current_node) {
+            return Ok(());
+        }
+
+        if !visited_non_presentable.insert(current_node_id) || hops >= max_hops {
+            return Err(crate::DialogueError::GraphError(format!(
+                "Detected non-presentable node loop while settling dialogue at {:?}",
+                current_node_id
+            )));
+        }
+
+        queue_runtime_action_for_node(dialogue, entity, current_node_id, runtime_actions);
+
+        previous_node_id = Some(current_node_id);
+        runner.advance(dialogue)?;
+        hops += 1;
+    }
+}
+
 /// Handle dialogue start requests.
 pub fn handle_start_dialogue_events(
     dialogue_assets: Res<Assets<DialogueAsset>>,
     mut start_events: MessageReader<crate::events::StartDialogue>,
     mut node_activated_events: MessageWriter<crate::events::DialogueNodeActivated>,
     mut dialogue_started_events: MessageWriter<crate::events::DialogueStarted>,
+    mut dialogue_ended_events: MessageWriter<crate::events::DialogueEnded>,
     mut runtime_actions: MessageWriter<DialogueRuntimeAction>,
     mut runner_query: Query<&mut DialogueRunner>,
 ) {
@@ -136,16 +190,23 @@ pub fn handle_start_dialogue_events(
             Ok(()) => {
                 runner.dialogue_handle = ev.dialogue_handle.clone();
                 if let Some(node_id) = runner.current_node_id {
-                    node_activated_events.write(crate::events::DialogueNodeActivated {
-                        entity: ev.entity,
-                        node_id,
-                    });
-                    queue_runtime_action_for_node(
+                    if let Err(err) = settle_runner_after_transition(
+                        &mut runner,
                         dialogue,
                         ev.entity,
-                        node_id,
+                        None,
+                        &mut node_activated_events,
+                        &mut dialogue_ended_events,
                         &mut runtime_actions,
-                    );
+                    ) {
+                        runner.state = DialogueState::Error(err.to_string());
+                        runner.current_node_id = None;
+                        error!(
+                            "Failed to settle started dialogue for {:?}: {}",
+                            ev.entity, err
+                        );
+                        continue;
+                    }
 
                     dialogue_started_events.write(crate::events::DialogueStarted {
                         entity: ev.entity,
@@ -196,24 +257,17 @@ pub fn handle_advance_dialogue_events(
 
                 match runner.advance(dialogue) {
                     Ok(()) => {
-                        if runner.state == DialogueState::Finished {
-                            dialogue_ended_events.write(crate::events::DialogueEnded {
-                                entity: ev.entity,
-                                normal_exit: true,
-                            });
-                        } else if runner.current_node_id != old_node_id {
-                            if let Some(node_id) = runner.current_node_id {
-                                node_activated_events.write(crate::events::DialogueNodeActivated {
-                                    entity: ev.entity,
-                                    node_id,
-                                });
-                                queue_runtime_action_for_node(
-                                    dialogue,
-                                    ev.entity,
-                                    node_id,
-                                    &mut runtime_actions,
-                                );
-                            }
+                        if let Err(err) = settle_runner_after_transition(
+                            &mut runner,
+                            dialogue,
+                            ev.entity,
+                            old_node_id,
+                            &mut node_activated_events,
+                            &mut dialogue_ended_events,
+                            &mut runtime_actions,
+                        ) {
+                            error!("Error settling dialogue after advance: {}", err);
+                            runner.state = DialogueState::Error(err.to_string());
                         }
                     }
                     Err(err) => {
@@ -246,7 +300,7 @@ pub fn handle_select_dialogue_events(
                     continue;
                 };
 
-                let connections = dialogue.graph.get_connected_nodes(node_id);
+                let connections = dialogue.graph.get_outgoing_connections(node_id);
                 if connections.is_empty() || ev.choice_index >= connections.len() {
                     warn!(
                         "Ignoring invalid choice index {} for entity {:?} (available choices: {})",
@@ -266,6 +320,8 @@ pub fn handle_select_dialogue_events(
                     entity: ev.entity,
                     node_id,
                     choice_index: ev.choice_index,
+                    choice_label: connections[ev.choice_index].1.label.clone(),
+                    choice_key: connections[ev.choice_index].1.choice_key.clone(),
                 });
             }
         }
@@ -299,7 +355,7 @@ fn queue_runtime_action_for_node(
     }
 }
 
-/// Apply non-visual dialogue nodes (effects/messages) and auto-advance.
+/// Applies queued non-visual dialogue node actions.
 fn apply_dialogue_actions(world: &mut World) {
     let actions: Vec<DialogueRuntimeAction> =
         world.resource_scope(|world, mut cursor: Mut<DialogueActionCursor>| {
@@ -337,29 +393,19 @@ fn apply_dialogue_actions(world: &mut World) {
                                 &reflect_from_ptr,
                                 &effect,
                             ) {
-                                warn!(
-                                    "Failed to apply dialogue effect {}: {}; advancing anyway",
-                                    effect.key, err
-                                );
+                                warn!("Failed to apply dialogue effect {}: {}", effect.key, err);
                             }
                         }
                         Err(err) => {
                             warn!(
-                                "Missing reflection metadata for dialogue effect {}: {}; advancing anyway",
+                                "Missing reflection metadata for dialogue effect {}: {}",
                                 effect.key, err
                             );
                         }
                     }
                 } else {
-                    warn!(
-                        "Dialogue effect key {} is not registered; advancing anyway",
-                        effect.key
-                    );
+                    warn!("Dialogue effect key {} is not registered", effect.key);
                 }
-
-                world
-                    .resource_mut::<Messages<AdvanceDialogue>>()
-                    .write(AdvanceDialogue { entity });
             }
             DialogueRuntimeAction::Message { entity, message } => {
                 if world.get::<DialogueRunner>(entity).is_none() {
@@ -372,20 +418,16 @@ fn apply_dialogue_actions(world: &mut World) {
                 if let Some(dispatch) = dispatch {
                     if let Err(err) = dispatch(world, &message) {
                         warn!(
-                            "Failed to dispatch dialogue message {}: {}; advancing anyway",
+                            "Failed to dispatch dialogue message {}: {}",
                             message.key, err
                         );
                     }
                 } else {
                     warn!(
-                        "Dialogue message key {} is not registered or message registry is unavailable; advancing anyway",
+                        "Dialogue message key {} is not registered or message registry is unavailable",
                         message.key
                     );
                 }
-
-                world
-                    .resource_mut::<Messages<AdvanceDialogue>>()
-                    .write(AdvanceDialogue { entity });
             }
         }
     }
@@ -678,7 +720,7 @@ mod tests {
     }
 
     #[test]
-    fn effect_nodes_mutate_registered_resources_and_queue_advance() {
+    fn effect_nodes_mutate_registered_resources_and_finish_without_queueing_advance() {
         let mut app = init_runtime_test_app();
         app.insert_resource(RuntimeTestState { value: 2 });
 
@@ -719,18 +761,22 @@ mod tests {
         app.update();
 
         assert_eq!(app.world().resource::<RuntimeTestState>().value, 7);
+        let runner = app
+            .world()
+            .get::<DialogueRunner>(entity)
+            .expect("runner should exist");
+        assert_eq!(runner.state, DialogueState::Finished);
 
         let mut advance_cursor = MessageCursor::<AdvanceDialogue>::default();
         let advances: Vec<AdvanceDialogue> = {
             let messages = app.world().resource::<Messages<AdvanceDialogue>>();
             advance_cursor.read(messages).cloned().collect()
         };
-        assert_eq!(advances.len(), 1);
-        assert_eq!(advances[0].entity, entity);
+        assert!(advances.is_empty());
     }
 
     #[test]
-    fn unknown_effect_keys_do_not_mutate_resources_and_still_auto_advance() {
+    fn unknown_effect_keys_do_not_mutate_resources_and_finish_without_queueing_advance() {
         let mut app = init_runtime_test_app();
         app.insert_resource(RuntimeTestState { value: 10 });
 
@@ -758,18 +804,22 @@ mod tests {
         app.update();
 
         assert_eq!(app.world().resource::<RuntimeTestState>().value, 10);
+        let runner = app
+            .world()
+            .get::<DialogueRunner>(entity)
+            .expect("runner should exist");
+        assert_eq!(runner.state, DialogueState::Finished);
 
         let mut advance_cursor = MessageCursor::<AdvanceDialogue>::default();
         let advances: Vec<AdvanceDialogue> = {
             let messages = app.world().resource::<Messages<AdvanceDialogue>>();
             advance_cursor.read(messages).cloned().collect()
         };
-        assert_eq!(advances.len(), 1);
-        assert_eq!(advances[0].entity, entity);
+        assert!(advances.is_empty());
     }
 
     #[test]
-    fn message_nodes_dispatch_registered_bevy_messages_and_queue_advance() {
+    fn message_nodes_dispatch_registered_bevy_messages_and_finish_without_queueing_advance() {
         let mut app = init_runtime_test_app();
 
         let mut graph = DialogueGraph::new();
@@ -810,18 +860,22 @@ mod tests {
                 tone: RuntimeTestTone::Urgent,
             }
         );
+        let runner = app
+            .world()
+            .get::<DialogueRunner>(entity)
+            .expect("runner should exist");
+        assert_eq!(runner.state, DialogueState::Finished);
 
         let mut advance_cursor = MessageCursor::<AdvanceDialogue>::default();
         let advances: Vec<AdvanceDialogue> = {
             let messages = app.world().resource::<Messages<AdvanceDialogue>>();
             advance_cursor.read(messages).cloned().collect()
         };
-        assert_eq!(advances.len(), 1);
-        assert_eq!(advances[0].entity, entity);
+        assert!(advances.is_empty());
     }
 
     #[test]
-    fn invalid_message_payloads_do_not_dispatch_and_still_auto_advance() {
+    fn invalid_message_payloads_do_not_dispatch_and_finish_without_queueing_advance() {
         let mut app = init_runtime_test_app();
 
         let mut graph = DialogueGraph::new();
@@ -854,14 +908,105 @@ mod tests {
             message_cursor.read(messages).cloned().collect()
         };
         assert!(sent.is_empty());
+        let runner = app
+            .world()
+            .get::<DialogueRunner>(entity)
+            .expect("runner should exist");
+        assert_eq!(runner.state, DialogueState::Finished);
 
         let mut advance_cursor = MessageCursor::<AdvanceDialogue>::default();
         let advances: Vec<AdvanceDialogue> = {
             let messages = app.world().resource::<Messages<AdvanceDialogue>>();
             advance_cursor.read(messages).cloned().collect()
         };
-        assert_eq!(advances.len(), 1);
-        assert_eq!(advances[0].entity, entity);
+        assert!(advances.is_empty());
+    }
+
+    #[test]
+    fn advance_skips_non_presentable_nodes_in_same_update() {
+        let mut app = init_runtime_test_app();
+        app.insert_resource(RuntimeTestState { value: 1 });
+
+        {
+            let app_type_registry = app.world_mut().resource_mut::<AppTypeRegistry>();
+            let mut type_registry = app_type_registry.write();
+            type_registry.register::<RuntimeTestState>();
+        }
+
+        app.world_mut()
+            .resource_mut::<DialogueRegistry>()
+            .register_reflected_resource(
+                <RuntimeTestState as bevy::reflect::Typed>::type_info(),
+                <RuntimeTestState as crate::registry::DialogueResource>::resource_key(),
+            );
+
+        let mut graph = DialogueGraph::new();
+        let start = graph.add_node(DialogueNode::text("Start"));
+        let effect = graph.add_node(DialogueNode::effect(DialogueEffect {
+            key: "runtime_test.value".to_string(),
+            op: DialogueOperation::Add,
+            value: DialogueValue::Int(2),
+        }));
+        let message = graph.add_node(DialogueNode::message(
+            DialogueMessageCall::new("runtime_test.message")
+                .with_param("amount", DialogueValue::Int(5))
+                .with_param("label", DialogueValue::String("settled".to_string()))
+                .with_param("tone", DialogueValue::Enum("Calm".to_string())),
+        ));
+        let end = graph.add_node(DialogueNode::text("End"));
+        graph
+            .connect(start, effect, ConnectionData::new(None))
+            .unwrap();
+        graph
+            .connect(effect, message, ConnectionData::new(None))
+            .unwrap();
+        graph
+            .connect(message, end, ConnectionData::new(None))
+            .unwrap();
+        graph.set_start_node(start).expect("set start");
+
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<DialogueAsset>>()
+            .add(DialogueAsset::new(graph));
+        let entity = app.world_mut().spawn(DialogueRunner::default()).id();
+
+        app.world_mut()
+            .resource_mut::<Messages<StartDialogue>>()
+            .write(StartDialogue {
+                entity,
+                dialogue_handle: handle,
+            });
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<Messages<AdvanceDialogue>>()
+            .write(AdvanceDialogue { entity });
+        app.update();
+
+        let runner = app
+            .world()
+            .get::<DialogueRunner>(entity)
+            .expect("runner should exist");
+        assert_eq!(runner.state, DialogueState::ShowingText);
+        assert_eq!(runner.current_node_id, Some(end));
+
+        assert_eq!(app.world().resource::<RuntimeTestState>().value, 3);
+
+        let mut message_cursor = MessageCursor::<RuntimeTestMessage>::default();
+        let sent: Vec<RuntimeTestMessage> = {
+            let messages = app.world().resource::<Messages<RuntimeTestMessage>>();
+            message_cursor.read(messages).cloned().collect()
+        };
+        assert_eq!(sent.len(), 1);
+        assert_eq!(
+            sent[0],
+            RuntimeTestMessage {
+                amount: 5,
+                label: "settled".to_string(),
+                tone: RuntimeTestTone::Calm,
+            }
+        );
     }
 
     #[test]

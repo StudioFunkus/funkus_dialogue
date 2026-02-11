@@ -14,7 +14,9 @@ use bevy_egui::{
 };
 use funkus_dialogue_core::graph::DialogueGraph;
 use funkus_dialogue_core::registry::{DialogueMessageRegistry, DialogueRegistry};
-use funkus_dialogue_core::{DialogueAsset, DialogueEditorMetadata};
+use funkus_dialogue_core::{
+    DialogueAsset, DialogueChoicePresentationRegistry, DialogueEditorMetadata,
+};
 use ron::ser::PrettyConfig;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -259,6 +261,7 @@ fn draw_editor_ui(
     images: Res<Assets<Image>>,
     registry: Option<Res<DialogueRegistry>>,
     message_registry: Option<Res<DialogueMessageRegistry>>,
+    presentation_registry: Option<Res<DialogueChoicePresentationRegistry>>,
 ) {
     if !editor_visibility.enabled {
         return;
@@ -309,25 +312,30 @@ fn draw_editor_ui(
         egui::SidePanel::right("editor_right_panel")
             .min_width(280.0)
             .show(ctx, |ui| {
-                if let Some(active) = workspace.active_dialogue_mut() {
-                    let output = inspector.show(
-                        ui,
-                        &mut active.graph,
-                        &mut active.node_editor,
-                        &mut status,
-                        &mut portrait_browser,
-                        &asset_server,
-                        &mut egui_textures,
-                        &images,
-                        registry.as_deref(),
-                        message_registry.as_deref(),
-                    );
-                    if output.dirty {
-                        active.dirty = true;
-                    }
-                } else {
-                    ui.label("No dialogue loaded.");
-                }
+                egui::ScrollArea::vertical()
+                    .id_salt("editor_right_panel_scroll")
+                    .show(ui, |ui| {
+                        if let Some(active) = workspace.active_dialogue_mut() {
+                            let output = inspector.show(
+                                ui,
+                                &mut active.graph,
+                                &mut active.node_editor,
+                                &mut status,
+                                &mut portrait_browser,
+                                &asset_server,
+                                &mut egui_textures,
+                                &images,
+                                registry.as_deref(),
+                                message_registry.as_deref(),
+                                presentation_registry.as_deref(),
+                            );
+                            if output.dirty {
+                                active.dirty = true;
+                            }
+                        } else {
+                            ui.label("No dialogue loaded.");
+                        }
+                    });
             });
 
         egui::CentralPanel::default().show(ctx, |ui| {

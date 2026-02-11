@@ -4,12 +4,14 @@ use bevy::prelude::{AssetServer, Assets, Image};
 use bevy_egui::egui::{self, Ui};
 use bevy_egui::{EguiTextureHandle, EguiUserTextures};
 
+use funkus_dialogue_core::DialogueChoicePresentationRegistry;
 use funkus_dialogue_core::graph::{DialogueGraph, DialogueNode, NodeId};
 use funkus_dialogue_core::registry::{
     DialogueEffect, DialogueFieldKind, DialogueMessageCall, DialogueMessageRegistry,
     DialogueOperation, DialogueRegistry, DialogueValue,
 };
 use rfd::FileDialog;
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::node_editor::DialogueNodeEditorState;
@@ -47,6 +49,7 @@ impl InspectorWidget {
         images: &Assets<Image>,
         registry: Option<&DialogueRegistry>,
         message_registry: Option<&DialogueMessageRegistry>,
+        presentation_registry: Option<&DialogueChoicePresentationRegistry>,
     ) -> InspectorOutput {
         let mut dirty = false;
 
@@ -86,12 +89,14 @@ impl InspectorWidget {
                 }
                 DialogueNode::Choice {
                     prompt,
+                    presentation_key,
                     speaker,
                     portrait,
                 } => {
                     dirty |= draw_choice_fields(
                         ui,
                         prompt,
+                        presentation_key,
                         speaker,
                         portrait,
                         portrait_browser,
@@ -99,6 +104,7 @@ impl InspectorWidget {
                         egui_textures,
                         images,
                         status,
+                        presentation_registry,
                     );
                     node_kind = Some(NodeKind::Choice);
                 }
@@ -117,16 +123,16 @@ impl InspectorWidget {
             ui.separator();
             match kind {
                 NodeKind::Text => {
-                    draw_text_connections(ui, graph, node_id);
+                    draw_text_connections(ui, graph, node_state, node_id);
                 }
                 NodeKind::Choice => {
                     dirty |= draw_choice_connections(ui, graph, node_state, status, node_id);
                 }
                 NodeKind::Effect => {
-                    draw_text_connections(ui, graph, node_id);
+                    draw_text_connections(ui, graph, node_state, node_id);
                 }
                 NodeKind::Message => {
-                    draw_text_connections(ui, graph, node_id);
+                    draw_text_connections(ui, graph, node_state, node_id);
                 }
             }
         }
@@ -218,19 +224,50 @@ fn draw_text_fields(
     images: &Assets<Image>,
     status: &mut EditorStatusMessages,
 ) -> bool {
+    draw_character_content_fields(
+        ui,
+        speaker,
+        portrait,
+        portrait_browser,
+        asset_server,
+        egui_textures,
+        images,
+        status,
+        "Body",
+        |ui| {
+            ui.add(egui::TextEdit::multiline(text).desired_rows(4))
+                .changed()
+        },
+    )
+}
+
+fn draw_character_content_fields<F>(
+    ui: &mut Ui,
+    speaker: &mut Option<String>,
+    portrait: &mut Option<String>,
+    portrait_browser: &mut EditorPortraitBrowser,
+    asset_server: &AssetServer,
+    egui_textures: &mut EguiUserTextures,
+    images: &Assets<Image>,
+    status: &mut EditorStatusMessages,
+    body_label: &str,
+    mut draw_body: F,
+) -> bool
+where
+    F: FnMut(&mut Ui) -> bool,
+{
     let mut dirty = false;
 
-    ui.label("Dialogue Text");
-    if ui
-        .add(egui::TextEdit::multiline(text).desired_rows(4))
-        .changed()
-    {
-        dirty = true;
-    }
-
+    ui.label("Content");
     if edit_optional_field(ui, "Speaker", speaker) {
         dirty = true;
     }
+
+    ui.label(body_label);
+    if draw_body(ui) {
+        dirty = true;
+    }
+
     dirty |= draw_portrait_picker(
         ui,
         portrait,
@@ -244,11 +281,18 @@ fn draw_text_fields(
     dirty
 }
 
-fn draw_text_connections(ui: &mut Ui, graph: &DialogueGraph, node_id: NodeId) {
+fn draw_text_connections(
+    ui: &mut Ui,
+    graph: &DialogueGraph,
+    node_state: &mut DialogueNodeEditorState,
+    node_id: NodeId,
+) {
     ui.label("Next");
     let connections = graph.get_connected_nodes(node_id);
     if let Some((next, _)) = connections.first() {
-        ui.label(format!("-> #{}", next.raw()));
+        if ui.button(format!("Node #{}", next.raw())).clicked() {
+            node_state.request_selection(*next);
+        }
     } else {
         ui.label("No outgoing connection.");
     }
@@ -257,6 +301,7 @@ fn draw_text_connections(ui: &mut Ui, graph: &DialogueGraph, node_id: NodeId) {
 fn draw_choice_fields(
     ui: &mut Ui,
     prompt: &mut Option<String>,
+    presentation_key: &mut Option<String>,
     speaker: &mut Option<String>,
     portrait: &mut Option<String>,
     portrait_browser: &mut EditorPortraitBrowser,
@@ -264,26 +309,156 @@ fn draw_choice_fields(
     egui_textures: &mut EguiUserTextures,
     images: &Assets<Image>,
     status: &mut EditorStatusMessages,
+    presentation_registry: Option<&DialogueChoicePresentationRegistry>,
 ) -> bool {
-    let mut dirty = false;
-
-    ui.label("Prompt");
-    if edit_optional_multiline(ui, prompt) {
-        dirty = true;
-    }
-
-    if edit_optional_field(ui, "Speaker", speaker) {
-        dirty = true;
-    }
-    dirty |= draw_portrait_picker(
+    let mut dirty = draw_character_content_fields(
         ui,
+        speaker,
         portrait,
         portrait_browser,
         asset_server,
         egui_textures,
         images,
         status,
+        "Body",
+        |ui| edit_optional_multiline(ui, prompt),
     );
+
+    ui.separator();
+    ui.label("Presentation");
+    dirty |= draw_choice_presentation_fields(ui, presentation_key, presentation_registry);
+
+    dirty
+}
+
+fn draw_choice_presentation_fields(
+    ui: &mut Ui,
+    presentation_key: &mut Option<String>,
+    presentation_registry: Option<&DialogueChoicePresentationRegistry>,
+) -> bool {
+    let mut dirty = false;
+
+    if let Some(current) = presentation_key.clone() {
+        let trimmed = current.trim();
+        let normalized = if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        };
+        if normalized != *presentation_key {
+            *presentation_key = normalized;
+            dirty = true;
+        }
+    }
+
+    ui.label("Presentation Mode");
+    if let Some(registry) = presentation_registry {
+        let mut known = registry.presentations().collect::<Vec<_>>();
+        known.sort_by(|a, b| a.label.cmp(&b.label).then(a.key.cmp(&b.key)));
+
+        let current_key = presentation_key.as_deref();
+        let current_is_custom = current_key.is_some_and(|key| !registry.contains(key));
+        let selected_text = if let Some(key) = current_key {
+            if let Some(definition) = registry.presentation(key) {
+                format!("{} ({})", definition.label, definition.key)
+            } else {
+                format!("Custom ({key})")
+            }
+        } else {
+            "Default (None)".to_string()
+        };
+
+        let mut picked_default = false;
+        let mut picked_registered_key: Option<String> = None;
+        let mut picked_custom = false;
+
+        egui::ComboBox::from_id_salt("choice_presentation_mode")
+            .selected_text(selected_text)
+            .show_ui(ui, |ui| {
+                if ui
+                    .selectable_label(presentation_key.is_none(), "Default (None)")
+                    .clicked()
+                {
+                    picked_default = true;
+                }
+
+                if !known.is_empty() {
+                    ui.separator();
+                    for presentation in &known {
+                        let is_selected =
+                            presentation_key.as_deref() == Some(presentation.key.as_str());
+                        if ui
+                            .selectable_label(
+                                is_selected,
+                                format!("{} ({})", presentation.label, presentation.key),
+                            )
+                            .clicked()
+                        {
+                            picked_registered_key = Some(presentation.key.clone());
+                        }
+                    }
+                }
+
+                ui.separator();
+                if ui
+                    .selectable_label(current_is_custom, "Custom Key")
+                    .clicked()
+                {
+                    picked_custom = true;
+                }
+            });
+
+        if picked_default && presentation_key.is_some() {
+            *presentation_key = None;
+            dirty = true;
+        }
+
+        if let Some(next_key) = picked_registered_key
+            && presentation_key.as_deref() != Some(next_key.as_str())
+        {
+            *presentation_key = Some(next_key);
+            dirty = true;
+        }
+
+        if picked_custom && !current_is_custom {
+            *presentation_key = Some("custom_mode".to_string());
+            dirty = true;
+        }
+
+        if let Some(key) = presentation_key.as_deref() {
+            if let Some(definition) = registry.presentation(key) {
+                if let Some(description) = definition.description.as_deref() {
+                    ui.small(description);
+                } else {
+                    ui.small("Registered mode");
+                }
+            } else {
+                if key == "custom_mode" {
+                    ui.small("Replace \"custom_mode\" with your game-specific key.");
+                }
+                let mut custom_key = key.to_string();
+                ui.horizontal(|ui| {
+                    ui.label("Custom Key");
+                    if ui.text_edit_singleline(&mut custom_key).changed() {
+                        let trimmed = custom_key.trim();
+                        *presentation_key = if trimmed.is_empty() {
+                            None
+                        } else {
+                            Some(trimmed.to_string())
+                        };
+                        dirty = true;
+                    }
+                });
+            }
+        } else {
+            ui.small("No presentation key set.");
+        }
+    } else {
+        ui.small("Leave empty to use default behavior.");
+        if edit_optional_field(ui, "Presentation Key (optional)", presentation_key) {
+            dirty = true;
+        }
+    }
 
     dirty
 }
@@ -298,38 +473,87 @@ fn draw_choice_connections(
     let mut dirty = false;
 
     ui.label("Choices");
-    let connections = graph.get_connected_nodes(node_id);
+    ui.small("Optional choice_key values provide stable IDs for gameplay logic.");
+    let connections = graph.get_outgoing_connections(node_id);
     if connections.is_empty() {
         ui.label("No outgoing connections.");
         return dirty;
     }
 
     let mut reorder_request: Option<(usize, usize)> = None;
-    for (index, (target, label)) in connections.iter().enumerate() {
-        let mut current = label
+    for (index, (target, connection_data)) in connections.iter().enumerate() {
+        let mut current = connection_data
+            .label
             .clone()
             .unwrap_or_else(|| format!("Choice {}", index + 1));
-        ui.horizontal(|ui| {
-            let is_first = index == 0;
+        let mut choice_key = connection_data.choice_key.clone().unwrap_or_default();
+        ui.group(|ui| {
+            ui.horizontal(|ui| {
+                ui.label("Move");
+                let is_first = index == 0;
+                let is_last = index + 1 == connections.len();
+                if ui.add_enabled(!is_first, egui::Button::new("^")).clicked() {
+                    reorder_request = Some((index, index.saturating_sub(1)));
+                }
+                if ui.add_enabled(!is_last, egui::Button::new("v")).clicked() {
+                    reorder_request = Some((index, index + 1));
+                }
+                if ui.button(format!("Node #{}", target.raw())).clicked() {
+                    node_state.request_selection(*target);
+                }
+            });
+
+            ui.horizontal(|ui| {
+                ui.label("Choice Text");
+                if ui.text_edit_singleline(&mut current).changed() {
+                    let trimmed = current.trim();
+                    let updated = if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(current.clone())
+                    };
+                    let _ = graph.update_connection_label(node_id, *target, updated);
+                    dirty = true;
+                }
+            });
+
             let is_last = index + 1 == connections.len();
-            if ui.add_enabled(!is_first, egui::Button::new("^")).clicked() {
-                reorder_request = Some((index, index.saturating_sub(1)));
-            }
-            if ui.add_enabled(!is_last, egui::Button::new("v")).clicked() {
-                reorder_request = Some((index, index + 1));
-            }
-            ui.label(format!("-> #{}", target.raw()));
-            if ui.text_edit_singleline(&mut current).changed() {
-                let trimmed = current.trim();
-                let updated = if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(current.clone())
-                };
-                let _ = graph.update_connection_label(node_id, *target, updated);
-                dirty = true;
+            ui.horizontal(|ui| {
+                ui.label("Choice Key");
+                if ui.text_edit_singleline(&mut choice_key).changed() {
+                    let trimmed = choice_key.trim();
+                    let updated = if trimmed.is_empty() {
+                        None
+                    } else {
+                        Some(trimmed.to_string())
+                    };
+                    let _ = graph.update_connection_choice_key(node_id, *target, updated);
+                    dirty = true;
+                }
+            });
+
+            if !is_last {
+                ui.add_space(2.0);
             }
         });
+    }
+
+    let mut seen = BTreeSet::new();
+    let mut duplicates = BTreeSet::new();
+    for (_, data) in &connections {
+        let Some(choice_key) = data.choice_key.as_deref() else {
+            continue;
+        };
+        if !seen.insert(choice_key.to_string()) {
+            duplicates.insert(choice_key.to_string());
+        }
+    }
+    if !duplicates.is_empty() {
+        let joined = duplicates.into_iter().collect::<Vec<_>>().join(", ");
+        ui.colored_label(
+            egui::Color32::YELLOW,
+            format!("Duplicate choice_key values: {joined}"),
+        );
     }
 
     if let Some((from, to)) = reorder_request {

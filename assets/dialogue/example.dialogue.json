@@ -180,12 +180,14 @@
         "type": "Choice",
         "id": 15,
         "prompt": "Test actions (page 1)",
+        "presentation_key": "inline_badges",
         "speaker": "Guide"
       },
       {
         "type": "Choice",
         "id": 16,
         "prompt": "Test actions (page 2)",
+        "presentation_key": "action_overlay",
         "speaker": "Guide"
       }
     ],
@@ -194,24 +196,28 @@
         "from": 2,
         "to": 1,
         "label": "That's all I need to know.",
+        "choice_key": "farewell",
         "order": 3
       },
       {
         "from": 2,
         "to": 3,
         "label": "How do I create dialogue?",
+        "choice_key": "creation_help",
         "order": 0
       },
       {
         "from": 2,
         "to": 4,
         "label": "What node types are available?",
+        "choice_key": "node_types",
         "order": 1
       },
       {
         "from": 2,
         "to": 15,
         "label": "Open test actions",
+        "choice_key": "actions",
         "order": 2
       },
       {
@@ -290,84 +296,98 @@
         "from": 15,
         "to": 2,
         "label": "Back to dialogue topics",
+        "choice_key": "topics",
         "order": 7
       },
       {
         "from": 15,
         "to": 5,
         "label": "Give me some gold",
+        "choice_key": "gold",
         "order": 0
       },
       {
         "from": 15,
         "to": 6,
         "label": "Mark that we've met",
+        "choice_key": "met_toggle",
         "order": 1
       },
       {
         "from": 15,
         "to": 7,
         "label": "Boost my reputation",
+        "choice_key": "reputation",
         "order": 2
       },
       {
         "from": 15,
         "to": 8,
         "label": "Give me a title",
+        "choice_key": "title",
         "order": 3
       },
       {
         "from": 15,
         "to": 9,
         "label": "Restock my inventory",
+        "choice_key": "inventory_set",
         "order": 4
       },
       {
         "from": 15,
         "to": 10,
         "label": "Add a potion",
+        "choice_key": "inventory_push",
         "order": 5
       },
       {
         "from": 15,
         "to": 16,
         "label": "More tests (page 2)",
+        "choice_key": "next_page",
         "order": 6
       },
       {
         "from": 16,
         "to": 2,
         "label": "Back to dialogue topics",
+        "choice_key": "topics",
         "order": 5
       },
       {
         "from": 16,
         "to": 11,
         "label": "Remove the map",
+        "choice_key": "remove_map",
         "order": 0
       },
       {
         "from": 16,
         "to": 12,
         "label": "Clear inventory",
+        "choice_key": "clear_inventory",
         "order": 1
       },
       {
         "from": 16,
         "to": 13,
         "label": "Set mood to Happy",
+        "choice_key": "set_mood_happy",
         "order": 2
       },
       {
         "from": 16,
         "to": 14,
         "label": "Trigger dialogue message event",
+        "choice_key": "message_event",
         "order": 3
       },
       {
         "from": 16,
         "to": 15,
         "label": "Back to tests (page 1)",
+        "choice_key": "back_page",
         "order": 4
       }
     ],

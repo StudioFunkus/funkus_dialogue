@@ -143,6 +143,8 @@ pub struct DialogueNodeActivated {
 /// * `entity` - Entity running the dialogue
 /// * `node_id` - ID of the choice node
 /// * `choice_index` - Index of the selected choice
+/// * `choice_label` - Label of the selected connection (if present)
+/// * `choice_key` - Stable semantic key for the selected connection (if present)
 ///
 /// # Example
 ///
@@ -168,6 +170,10 @@ pub struct DialogueChoiceMade {
     pub node_id: NodeId,
     /// Index of the selected choice
     pub choice_index: usize,
+    /// Label of the selected choice option.
+    pub choice_label: Option<String>,
+    /// Stable semantic key for the selected choice option.
+    pub choice_key: Option<String>,
 }
 
 /// Event sent when a dialogue ends.

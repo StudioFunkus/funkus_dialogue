@@ -1,10 +1,11 @@
 //! Comprehensive editor + preview example.
 
-use bevy::ecs::schedule::common_conditions::resource_changed;
 use bevy::prelude::*;
 use bevy::window::WindowResolution;
 use funkus_dialogue_core::*;
-use funkus_dialogue_editor::{DialogueEditorPlugin, DialogueEditorWorkspace, EditorVisibility};
+use funkus_dialogue_editor::{
+    DialogueEditorPlugin, DialogueEditorWorkspace, EditorCommand, EditorVisibility,
+};
 use funkus_dialogue_ui::*;
 use std::time::Duration;
 
@@ -57,7 +58,7 @@ impl Default for ExampleState {
 #[derive(Resource, Default)]
 struct PreviewContext {
     runner: Option<Entity>,
-    ui_root: Option<Entity>,
+    custom_overlay_root: Option<Entity>,
     handle: Option<Handle<DialogueAsset>>,
 }
 
@@ -113,6 +114,24 @@ enum AppState {
     Preview,
 }
 
+const ACTION_OVERLAY_PRESENTATION_KEY: &str = "action_overlay";
+
+struct ActionOverlayPresentation;
+
+impl DialogueChoicePresentation for ActionOverlayPresentation {
+    fn key() -> &'static str {
+        ACTION_OVERLAY_PRESENTATION_KEY
+    }
+
+    fn label() -> &'static str {
+        "Action Overlay"
+    }
+
+    fn description() -> Option<&'static str> {
+        Some("Uses a custom in-game overlay and semantic action key input")
+    }
+}
+
 fn main() {
     App::new()
         .add_plugins((
@@ -128,21 +147,34 @@ fn main() {
             DialogueUIPlugin,
             DialogueEditorPlugin::default(),
         ))
+        .register_choice_presentation::<ActionOverlayPresentation>()
         .insert_resource(ExampleState::default())
         .init_resource::<MessageDebugVisual>()
         .init_resource::<PreviewContext>()
         .init_resource::<PreviewRequest>()
         .init_state::<AppState>()
-        .add_systems(Startup, (spawn_workspace_camera, spawn_state_debug_ui))
-        .add_systems(Update, apply_example_dialogue_messages)
         .add_systems(
-            Update,
-            update_state_debug_ui.run_if(resource_changed::<ExampleState>),
+            Startup,
+            (
+                spawn_workspace_camera,
+                spawn_state_debug_ui,
+                load_default_workspace_dialogue,
+            ),
         )
+        .add_systems(Update, apply_example_dialogue_messages)
+        .add_systems(Update, update_state_debug_ui)
         .add_systems(Update, update_message_debug_ui)
         .add_systems(Update, editor_controls.run_if(in_state(AppState::Editor)))
         .add_systems(Update, begin_preview.run_if(in_state(AppState::Editor)))
         .add_systems(Update, preview_input.run_if(in_state(AppState::Preview)))
+        .add_systems(
+            Update,
+            action_overlay_input.run_if(in_state(AppState::Preview)),
+        )
+        .add_systems(
+            Update,
+            update_action_overlay_ui.run_if(in_state(AppState::Preview)),
+        )
         .add_systems(
             Update,
             handle_preview_end.run_if(in_state(AppState::Preview)),
@@ -154,6 +186,12 @@ fn main() {
 
 fn spawn_workspace_camera(mut commands: Commands) {
     commands.spawn((Camera::default(), Camera2d));
+}
+
+fn load_default_workspace_dialogue(mut command_writer: MessageWriter<EditorCommand>) {
+    command_writer.write(EditorCommand::LoadDialogueFromPath {
+        path: "example.dialogue.json".into(),
+    });
 }
 
 fn apply_example_dialogue_messages(
@@ -217,7 +255,7 @@ fn enter_preview(
     mut preview: ResMut<PreviewContext>,
 ) {
     visibility.enabled = false;
-    preview.ui_root = Some(spawn_dialogue_ui(&mut commands));
+    preview.custom_overlay_root = Some(spawn_custom_overlay_ui(&mut commands));
 }
 
 fn exit_preview(
@@ -226,7 +264,7 @@ fn exit_preview(
     mut preview: ResMut<PreviewContext>,
 ) {
     visibility.enabled = true;
-    if let Some(entity) = preview.ui_root.take() {
+    if let Some(entity) = preview.custom_overlay_root.take() {
         commands
             .entity(entity)
             .despawn_related::<Children>()
@@ -239,6 +277,28 @@ fn exit_preview(
             .despawn();
     }
     preview.handle = None;
+}
+
+fn spawn_custom_overlay_ui(commands: &mut Commands) -> Entity {
+    commands
+        .spawn((
+            Text::new(""),
+            TextFont {
+                font_size: 18.0,
+                ..default()
+            },
+            TextColor(Color::srgb(0.95, 0.85, 0.6)),
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(280.0),
+                left: Val::Px(120.0),
+                right: Val::Px(120.0),
+                display: Display::None,
+                ..default()
+            },
+            ActionOverlayText,
+        ))
+        .id()
 }
 
 fn preview_input(
@@ -261,25 +321,28 @@ fn preview_input(
         stop_events.write(StopDialogue { entity });
     }
 
-    if keyboard_input.just_pressed(KeyCode::Space) {
-        if matches!(
-            runner.state,
-            DialogueState::ShowingText | DialogueState::ChoiceSelected(_)
-        ) {
-            advance_events.write(AdvanceDialogue { entity });
-        }
+    if keyboard_input.just_pressed(KeyCode::Space) && runner.state == DialogueState::ShowingText {
+        advance_events.write(AdvanceDialogue { entity });
     }
+
+    let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) else {
+        return;
+    };
+
+    let is_custom_priority_mode = runner
+        .current_choice_presentation_key(dialogue)
+        .is_some_and(|key| key == ACTION_OVERLAY_PRESENTATION_KEY);
 
     if runner.state == DialogueState::WaitingForChoice
         || matches!(runner.state, DialogueState::ChoiceSelected(_))
     {
+        if is_custom_priority_mode {
+            return;
+        }
+
         let choice_count = runner
-            .current_node_id
-            .and_then(|node_id| {
-                dialogue_assets
-                    .get(&runner.dialogue_handle)
-                    .map(|dialogue| dialogue.graph.get_connected_nodes(node_id).len())
-            })
+            .current_choices(dialogue)
+            .map(|choices| choices.len())
             .unwrap_or(0);
 
         for i in 0..choice_count.min(9) {
@@ -305,6 +368,174 @@ fn preview_input(
     }
 }
 
+fn action_overlay_input(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    preview: Res<PreviewContext>,
+    dialogue_assets: Res<Assets<DialogueAsset>>,
+    runners: Query<&DialogueRunner>,
+    mut select_events: MessageWriter<SelectDialogueChoice>,
+    mut advance_events: MessageWriter<AdvanceDialogue>,
+) {
+    let Some(entity) = preview.runner else {
+        return;
+    };
+    let Ok(runner) = runners.get(entity) else {
+        return;
+    };
+    if !(runner.state == DialogueState::WaitingForChoice
+        || matches!(runner.state, DialogueState::ChoiceSelected(_)))
+    {
+        return;
+    }
+
+    let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) else {
+        return;
+    };
+    if runner.current_choice_presentation_key(dialogue) != Some(ACTION_OVERLAY_PRESENTATION_KEY) {
+        return;
+    }
+
+    let Ok(choices) = runner.current_choices(dialogue) else {
+        return;
+    };
+    if choices.is_empty() {
+        return;
+    }
+
+    let mut picked_index = None;
+    if keyboard_input.just_pressed(KeyCode::Digit1) {
+        picked_index = choices
+            .iter()
+            .find(|choice| choice.choice_key.as_deref() == Some("remove_map"))
+            .map(|choice| choice.index);
+    } else if keyboard_input.just_pressed(KeyCode::Digit2) {
+        picked_index = choices
+            .iter()
+            .find(|choice| choice.choice_key.as_deref() == Some("clear_inventory"))
+            .map(|choice| choice.index);
+    } else if keyboard_input.just_pressed(KeyCode::Digit3) {
+        picked_index = choices
+            .iter()
+            .find(|choice| choice.choice_key.as_deref() == Some("set_mood_happy"))
+            .map(|choice| choice.index);
+    }
+
+    if let Some(choice_index) = picked_index {
+        select_events.write(SelectDialogueChoice {
+            entity,
+            choice_index,
+        });
+        return;
+    }
+
+    let current_index = match runner.state {
+        DialogueState::ChoiceSelected(index) => index.min(choices.len().saturating_sub(1)),
+        _ => 0,
+    };
+
+    if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
+        let next = if current_index == 0 {
+            choices.len() - 1
+        } else {
+            current_index - 1
+        };
+        select_events.write(SelectDialogueChoice {
+            entity,
+            choice_index: next,
+        });
+    }
+
+    if keyboard_input.just_pressed(KeyCode::ArrowRight) {
+        let next = (current_index + 1) % choices.len();
+        select_events.write(SelectDialogueChoice {
+            entity,
+            choice_index: next,
+        });
+    }
+
+    let confirm_pressed = keyboard_input.just_pressed(KeyCode::Enter)
+        || keyboard_input.just_pressed(KeyCode::NumpadEnter);
+    if confirm_pressed && matches!(runner.state, DialogueState::ChoiceSelected(_)) {
+        advance_events.write(AdvanceDialogue { entity });
+    }
+}
+
+fn update_action_overlay_ui(
+    preview: Res<PreviewContext>,
+    dialogue_assets: Res<Assets<DialogueAsset>>,
+    runners: Query<&DialogueRunner>,
+    mut overlay_query: Query<(&mut Text, &mut Node), With<ActionOverlayText>>,
+) {
+    let Ok((mut overlay_text, mut overlay_node)) = overlay_query.single_mut() else {
+        return;
+    };
+
+    let Some(entity) = preview.runner else {
+        overlay_node.display = Display::None;
+        *overlay_text = Text::new("");
+        return;
+    };
+    let Ok(runner) = runners.get(entity) else {
+        overlay_node.display = Display::None;
+        *overlay_text = Text::new("");
+        return;
+    };
+    let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) else {
+        overlay_node.display = Display::None;
+        *overlay_text = Text::new("");
+        return;
+    };
+    if runner.current_choice_presentation_key(dialogue) != Some(ACTION_OVERLAY_PRESENTATION_KEY) {
+        overlay_node.display = Display::None;
+        *overlay_text = Text::new("");
+        return;
+    }
+
+    let prompt = match runner.current_node(dialogue) {
+        Some(DialogueNode::Choice { prompt, .. }) => prompt
+            .clone()
+            .unwrap_or_else(|| "Choose a test action".to_string()),
+        _ => "Choose a test action".to_string(),
+    };
+
+    let Ok(choices) = runner.current_choices(dialogue) else {
+        overlay_node.display = Display::None;
+        *overlay_text = Text::new("");
+        return;
+    };
+    let selected = match runner.state {
+        DialogueState::ChoiceSelected(index) => Some(index),
+        _ => None,
+    };
+
+    let mut lines = vec![
+        "Action Overlay (custom presentation)".to_string(),
+        prompt,
+        "Pick with 1/2/3, or Arrow Left/Right + Enter".to_string(),
+    ];
+    for choice in choices {
+        let label = choice
+            .label
+            .clone()
+            .unwrap_or_else(|| format!("Choice {}", choice.index + 1));
+        let key_hint = match choice.choice_key.as_deref() {
+            Some("remove_map") => "1",
+            Some("clear_inventory") => "2",
+            Some("set_mood_happy") => "3",
+            _ => "-",
+        };
+        let marker = if selected == Some(choice.index) {
+            ">"
+        } else {
+            " "
+        };
+        lines.push(format!("{marker} [{key_hint}] {label}"));
+    }
+
+    overlay_node.display = Display::Flex;
+    *overlay_text = Text::new(lines.join("\n"));
+}
+
 fn handle_preview_end(
     mut ended: MessageReader<DialogueEnded>,
     mut next_state: ResMut<NextState<AppState>>,
@@ -320,7 +551,10 @@ struct StateDebugText;
 #[derive(Component)]
 struct MessageDebugText;
 
-fn format_state_debug_text(state: &ExampleState) -> String {
+#[derive(Component)]
+struct ActionOverlayText;
+
+fn format_state_debug_text(state: &ExampleState, active_presentation: &str) -> String {
     let inventory = if state.inventory.is_empty() {
         "(empty)".to_string()
     } else {
@@ -333,14 +567,20 @@ fn format_state_debug_text(state: &ExampleState) -> String {
     };
 
     format!(
-        "State\n- gold: {}\n- reputation: {:.2}\n- met_npc: {}\n- title: {}\n- inventory: {}\n- mood: {:?}",
-        state.gold, state.reputation, state.met_npc, state.title, inventory, state.mood
+        "State\n- gold: {}\n- reputation: {:.2}\n- met_npc: {}\n- title: {}\n- inventory: {}\n- mood: {:?}\n- active_presentation: {}",
+        state.gold,
+        state.reputation,
+        state.met_npc,
+        state.title,
+        inventory,
+        state.mood,
+        active_presentation
     )
 }
 
 fn spawn_state_debug_ui(mut commands: Commands, state: Res<ExampleState>) {
     commands.spawn((
-        Text::new(format_state_debug_text(&state)),
+        Text::new(format_state_debug_text(&state, "none")),
         TextFont {
             font_size: 16.0,
             ..default()
@@ -358,11 +598,43 @@ fn spawn_state_debug_ui(mut commands: Commands, state: Res<ExampleState>) {
 
 fn update_state_debug_ui(
     state: Res<ExampleState>,
+    preview: Res<PreviewContext>,
+    dialogue_assets: Res<Assets<DialogueAsset>>,
+    runners: Query<&DialogueRunner>,
     mut query: Query<&mut Text, With<StateDebugText>>,
 ) {
-    let formatted = format_state_debug_text(&state);
+    let active_presentation = active_presentation_mode(&preview, &dialogue_assets, &runners);
+    let formatted = format_state_debug_text(&state, &active_presentation);
     for mut text in &mut query {
         *text = Text::new(formatted.clone());
+    }
+}
+
+fn active_presentation_mode(
+    preview: &PreviewContext,
+    dialogue_assets: &Assets<DialogueAsset>,
+    runners: &Query<&DialogueRunner>,
+) -> String {
+    let Some(entity) = preview.runner else {
+        return "none".to_string();
+    };
+    let Ok(runner) = runners.get(entity) else {
+        return "none".to_string();
+    };
+    let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) else {
+        return "none".to_string();
+    };
+    let Some(current_node) = runner.current_node(dialogue) else {
+        return "none".to_string();
+    };
+
+    if matches!(current_node, DialogueNode::Choice { .. }) {
+        runner
+            .current_choice_presentation_key(dialogue)
+            .unwrap_or("default")
+            .to_string()
+    } else {
+        "none".to_string()
     }
 }
 

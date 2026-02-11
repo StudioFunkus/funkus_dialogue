@@ -84,6 +84,7 @@ mod asset;
 mod error;
 mod events;
 pub mod graph;
+mod presentation;
 pub mod registry;
 mod runtime;
 
@@ -101,14 +102,18 @@ pub use events::{
     SelectDialogueChoice, StartDialogue, StopDialogue,
 };
 pub use funkus_dialogue_derive::{DialogueMessage, DialogueResource};
-pub use graph::{Connection, DialogueGraph, DialogueNode, NodeId};
+pub use graph::{Connection, ConnectionData, DialogueGraph, DialogueNode, NodeId};
+pub use presentation::{
+    DialogueChoicePresentation, DialogueChoicePresentationAppExt,
+    DialogueChoicePresentationDefinition, DialogueChoicePresentationRegistry,
+};
 pub use registry::{
     DialogueEffect, DialogueMessage, DialogueMessageCall, DialogueMessageDefinition,
     DialogueMessageError, DialogueMessageField, DialogueMessageParam, DialogueMessageRegistry,
     DialogueMessageRegistryPlugin, DialogueMessageTypeData, DialogueOperation, DialogueRegistry,
     DialogueRegistryPlugin, DialogueResource, DialogueResourceTypeData, DialogueValue,
 };
-pub use runtime::{DialogueRunner, DialogueState};
+pub use runtime::{DialogueRunner, DialogueState, DialogueSystemSet};
 
 #[doc(hidden)]
 pub mod __private {

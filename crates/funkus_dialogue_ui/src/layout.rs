@@ -1,0 +1,81 @@
+use bevy::prelude::*;
+
+use crate::components::{
+    ChoicesContainer, DialogueDisplay, DialogueText, PortraitImage, SpeakerText,
+};
+
+/// Bundle for adding dialogue UI components to an entity.
+#[derive(Bundle)]
+pub struct DialogueUIBundle {
+    pub display: DialogueDisplay,
+}
+
+/// Spawns the default dialogue UI entity tree.
+pub fn spawn_dialogue_ui(commands: &mut Commands) -> Entity {
+    commands
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                bottom: Val::Px(60.0),
+                left: Val::Px(100.0),
+                right: Val::Px(100.0),
+                height: Val::Px(200.0),
+                padding: UiRect::all(Val::Px(10.0)),
+                border: UiRect::all(Val::Px(2.0)),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.1, 0.1, 0.1, 0.8)),
+            DialogueDisplay,
+        ))
+        .with_children(|parent| {
+            // Portrait image (optional).
+            parent.spawn((
+                Node {
+                    width: Val::Px(64.0),
+                    height: Val::Px(64.0),
+                    margin: UiRect::right(Val::Px(12.0)),
+                    ..default()
+                },
+                ImageNode::default(),
+                PortraitImage,
+            ));
+
+            // Speaker name.
+            parent.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 20.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+                SpeakerText,
+            ));
+
+            // Dialogue text.
+            parent.spawn((
+                Text::new(""),
+                TextFont {
+                    font_size: 18.0,
+                    ..default()
+                },
+                TextColor(Color::WHITE),
+                Node {
+                    margin: UiRect::top(Val::Px(10.0)),
+                    ..default()
+                },
+                DialogueText,
+            ));
+
+            // Choices container.
+            parent.spawn((
+                Node {
+                    display: Display::Flex,
+                    flex_direction: FlexDirection::Column,
+                    margin: UiRect::top(Val::Px(20.0)),
+                    ..default()
+                },
+                ChoicesContainer,
+            ));
+        })
+        .id()
+}

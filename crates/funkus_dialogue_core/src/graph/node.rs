@@ -79,6 +79,7 @@ impl NodeId {
 /// let connection = Connection {
 ///     target_id: NodeId::from_raw(2),
 ///     label: Some("Go to the castle".to_string()),
+///     choice_key: Some("castle".to_string()),
 /// };
 ///
 /// assert_eq!(connection.label.as_deref(), Some("Go to the castle"));
@@ -90,6 +91,8 @@ pub struct Connection {
     pub target_id: NodeId,
     /// Optional label for this connection.
     pub label: Option<String>,
+    /// Optional stable semantic key for this option.
+    pub choice_key: Option<String>,
 }
 
 /// Data stored on connections between dialogue nodes.
@@ -101,6 +104,11 @@ pub struct Connection {
 pub struct ConnectionData {
     /// Optional label for this connection (used as choice text for choice nodes)
     pub label: Option<String>,
+    /// Optional stable semantic key for this connection.
+    ///
+    /// This stays stable even if labels are renamed or options are reordered.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub choice_key: Option<String>,
     /// Optional explicit ordering for this connection among siblings.
     ///
     /// Lower values are shown/processed first. This is assigned automatically
@@ -112,13 +120,24 @@ pub struct ConnectionData {
 impl ConnectionData {
     /// Creates a new connection with an optional label
     pub fn new(label: Option<String>) -> Self {
-        Self { label, order: None }
+        Self {
+            label,
+            choice_key: None,
+            order: None,
+        }
     }
 
     /// Assigns an explicit ordering value to the connection.
     #[must_use]
     pub fn with_order(mut self, order: u32) -> Self {
         self.order = Some(order);
+        self
+    }
+
+    /// Assigns a stable semantic key to the connection.
+    #[must_use]
+    pub fn with_choice_key(mut self, choice_key: impl Into<String>) -> Self {
+        self.choice_key = Some(choice_key.into());
         self
     }
 }

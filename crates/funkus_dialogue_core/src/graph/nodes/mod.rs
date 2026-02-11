@@ -52,6 +52,9 @@ pub enum DialogueNode {
     Choice {
         /// Optional prompt displayed above the choice list.
         prompt: Option<String>,
+        /// Optional presentation key used by UI layers to select a specific choice UI mode.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        presentation_key: Option<String>,
         /// Optional speaker name for the prompt.
         speaker: Option<String>,
         /// Optional portrait or avatar identifier.
@@ -83,6 +86,7 @@ impl DialogueNode {
     pub fn choice() -> Self {
         DialogueNode::Choice {
             prompt: None,
+            presentation_key: None,
             speaker: None,
             portrait: None,
         }
@@ -149,6 +153,40 @@ impl DialogueNode {
         }
     }
 
+    /// Sets the presentation key for a choice node.
+    pub fn set_presentation_key(&mut self, key: impl Into<String>) -> Result<(), &'static str> {
+        match self {
+            DialogueNode::Choice {
+                presentation_key, ..
+            } => {
+                *presentation_key = Some(key.into());
+                Ok(())
+            }
+            _ => Err("Can only set presentation key on a Choice node"),
+        }
+    }
+
+    /// Clears the presentation key from a choice node.
+    pub fn clear_presentation_key(&mut self) {
+        if let DialogueNode::Choice {
+            presentation_key, ..
+        } = self
+        {
+            *presentation_key = None;
+        }
+    }
+
+    /// Returns the presentation key for choice nodes.
+    #[must_use]
+    pub fn presentation_key(&self) -> Option<&str> {
+        match self {
+            DialogueNode::Choice {
+                presentation_key, ..
+            } => presentation_key.as_deref(),
+            _ => None,
+        }
+    }
+
     /// Builder-style helper that assigns a speaker and returns the modified node.
     ///
     /// # Example
@@ -191,6 +229,12 @@ impl DialogueNode {
     /// ```
     pub fn with_prompt(mut self, prompt: impl Into<String>) -> Result<Self, &'static str> {
         self.set_prompt(prompt)?;
+        Ok(self)
+    }
+
+    /// Builder-style helper for attaching a presentation key to a choice node.
+    pub fn with_presentation_key(mut self, key: impl Into<String>) -> Result<Self, &'static str> {
+        self.set_presentation_key(key)?;
         Ok(self)
     }
 }

@@ -35,7 +35,8 @@ pub struct DialogueNodeEditorState {
     graph_to_snarl: HashMap<NodeId, SnarlNodeId>,
     spawn_index: usize,
     pub selected_nodes: Vec<NodeId>,
-    pending_selection: Option<NodeId>,
+    canvas_selected_nodes: Vec<NodeId>,
+    selection_override: Option<Vec<NodeId>>,
 }
 
 impl DialogueNodeEditorState {
@@ -56,7 +57,8 @@ impl DialogueNodeEditorState {
             graph_to_snarl: HashMap::new(),
             spawn_index: 0,
             selected_nodes: Vec::new(),
-            pending_selection: None,
+            canvas_selected_nodes: Vec::new(),
+            selection_override: None,
         };
         state.rebuild_from_graph(graph, layout);
         state
@@ -70,7 +72,8 @@ impl DialogueNodeEditorState {
         self.snarl = Snarl::new();
         self.graph_to_snarl.clear();
         self.selected_nodes.clear();
-        self.pending_selection = None;
+        self.canvas_selected_nodes.clear();
+        self.selection_override = None;
 
         let mut ids = graph.node_ids();
         ids.sort_by_key(|id| id.raw());
@@ -143,6 +146,14 @@ impl DialogueNodeEditorState {
         self.spawn_index = self.spawn_index.max(self.graph_to_snarl.len());
         self.selected_nodes
             .retain(|id| self.graph_to_snarl.contains_key(id));
+        self.canvas_selected_nodes
+            .retain(|id| self.graph_to_snarl.contains_key(id));
+        if let Some(override_selection) = &mut self.selection_override {
+            override_selection.retain(|id| self.graph_to_snarl.contains_key(id));
+            if override_selection.is_empty() {
+                self.selection_override = None;
+            }
+        }
     }
 
     pub fn refresh_connections_for_node(&mut self, graph: &DialogueGraph, node_id: NodeId) {
@@ -188,11 +199,20 @@ impl DialogueNodeEditorState {
     }
 
     pub fn request_selection(&mut self, id: NodeId) {
-        self.pending_selection = Some(id);
+        self.selected_nodes = vec![id];
+        self.selection_override = Some(vec![id]);
     }
 
     pub fn drop_selection(&mut self, id: NodeId) {
         self.selected_nodes.retain(|existing| *existing != id);
+        self.canvas_selected_nodes
+            .retain(|existing| *existing != id);
+        if let Some(override_selection) = &mut self.selection_override {
+            override_selection.retain(|existing| *existing != id);
+            if override_selection.is_empty() {
+                self.selection_override = None;
+            }
+        }
     }
 
     /// Builds tooling-only metadata describing node layout (position + collapsed state).
@@ -250,11 +270,6 @@ pub fn draw_dialogue_node_editor(
     state: &mut DialogueNodeEditorState,
 ) -> bool {
     state.ensure_graph_sync(graph);
-    let mut preserve_selection = false;
-    if let Some(requested) = state.pending_selection.take() {
-        state.selected_nodes = vec![requested];
-        preserve_selection = true;
-    }
     let mut add_text_node = false;
     let mut add_choice_node = false;
     let mut add_effect_node = false;
@@ -280,9 +295,9 @@ pub fn draw_dialogue_node_editor(
 
     ui.separator();
 
-    let mut selected = Vec::new();
+    let mut canvas_selected = Vec::new();
     let mut dirty = false;
-    let (viewer_dirty, response_clicked) = {
+    let viewer_dirty = {
         let (snarl, graph_to_snarl, spawn_index) = state.split_mut();
 
         if add_text_node {
@@ -356,25 +371,49 @@ pub fn draw_dialogue_node_editor(
         GraphTheme::apply_node_text_styles(ui.style_mut());
         let response = snarl_widget.show(snarl, &mut viewer, ui);
         *ui.style_mut() = old_style.as_ref().clone();
-        let response_clicked = response.clicked();
+        let _ = response;
         let viewer_dirty = viewer.dirty;
 
         for snarl_id in snarl_widget.get_selected_nodes(ui) {
             if let Some(view) = snarl.get_node(snarl_id) {
-                selected.push(view.graph_id);
+                canvas_selected.push(view.graph_id);
             }
         }
-        (viewer_dirty, response_clicked)
+        viewer_dirty
     };
 
-    // Selection comes from egui-snarl; we copy it into editor state for the inspector.
-    if !selected.is_empty() {
-        state.selected_nodes = selected;
-    } else if response_clicked && !preserve_selection {
-        state.selected_nodes.clear();
-    }
+    // Selection from egui-snarl is the source of truth for canvas interaction.
+    // Always mirror it (including empty) so modifier-based deselection does not go stale.
+    canvas_selected.sort_unstable_by_key(|id| id.raw());
+    reconcile_effective_selection(
+        &mut state.canvas_selected_nodes,
+        &mut state.selection_override,
+        &mut state.selected_nodes,
+        canvas_selected,
+    );
 
     viewer_dirty || dirty
+}
+
+fn reconcile_effective_selection(
+    canvas_selected_nodes: &mut Vec<NodeId>,
+    selection_override: &mut Option<Vec<NodeId>>,
+    selected_nodes: &mut Vec<NodeId>,
+    canvas_selected: Vec<NodeId>,
+) {
+    let canvas_changed = canvas_selected != *canvas_selected_nodes;
+    *canvas_selected_nodes = canvas_selected.clone();
+
+    // Inspector-driven selection override persists until canvas selection changes.
+    if canvas_changed {
+        *selection_override = None;
+    }
+
+    if let Some(override_selection) = selection_override.clone() {
+        *selected_nodes = override_selection;
+    } else {
+        *selected_nodes = canvas_selected;
+    }
 }
 
 fn spawn_node(
@@ -1014,5 +1053,49 @@ mod tests {
 
         assert_eq!(entry.pos, [42.0, 77.0]);
         assert!(!entry.collapsed);
+    }
+
+    #[test]
+    fn reconcile_selection_mirrors_empty_canvas_selection() {
+        let mut canvas_selected_nodes = vec![NodeId::from_raw(1)];
+        let mut selection_override = None;
+        let mut selected_nodes = vec![NodeId::from_raw(1)];
+
+        reconcile_effective_selection(
+            &mut canvas_selected_nodes,
+            &mut selection_override,
+            &mut selected_nodes,
+            Vec::new(),
+        );
+
+        assert!(selected_nodes.is_empty());
+        assert!(canvas_selected_nodes.is_empty());
+    }
+
+    #[test]
+    fn reconcile_selection_keeps_override_until_canvas_changes() {
+        let mut canvas_selected_nodes = vec![NodeId::from_raw(1)];
+        let mut selection_override = Some(vec![NodeId::from_raw(5)]);
+        let mut selected_nodes = vec![NodeId::from_raw(5)];
+
+        reconcile_effective_selection(
+            &mut canvas_selected_nodes,
+            &mut selection_override,
+            &mut selected_nodes,
+            vec![NodeId::from_raw(1)],
+        );
+
+        assert_eq!(selected_nodes, vec![NodeId::from_raw(5)]);
+        assert_eq!(selection_override, Some(vec![NodeId::from_raw(5)]));
+
+        reconcile_effective_selection(
+            &mut canvas_selected_nodes,
+            &mut selection_override,
+            &mut selected_nodes,
+            vec![NodeId::from_raw(2)],
+        );
+
+        assert_eq!(selected_nodes, vec![NodeId::from_raw(2)]);
+        assert!(selection_override.is_none());
     }
 }

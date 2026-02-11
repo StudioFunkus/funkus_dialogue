@@ -54,6 +54,19 @@ pub enum DialogueState {
     Error(String),
 }
 
+/// Runtime descriptor for one currently available choice.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeChoice {
+    /// Stable index used when sending [`crate::SelectDialogueChoice`].
+    pub index: usize,
+    /// Display label for the option.
+    pub label: Option<String>,
+    /// Optional semantic key for stable gameplay logic.
+    pub choice_key: Option<String>,
+    /// Target node reached when this option is committed.
+    pub target: NodeId,
+}
+
 impl DialogueState {
     /// Get a string representation of the state for error messages
     ///
@@ -504,6 +517,52 @@ impl DialogueRunner {
     pub fn current_node<'a>(&self, dialogue: &'a DialogueAsset) -> Option<&'a DialogueNode> {
         self.current_node_id
             .and_then(|id| dialogue.graph.get_node(id))
+    }
+
+    /// Returns the active choice node presentation key, if the current node is a choice.
+    #[must_use]
+    pub fn current_choice_presentation_key<'a>(
+        &self,
+        dialogue: &'a DialogueAsset,
+    ) -> Option<&'a str> {
+        let DialogueNode::Choice {
+            presentation_key, ..
+        } = self.current_node(dialogue)?
+        else {
+            return None;
+        };
+        presentation_key.as_deref()
+    }
+
+    /// Returns full choice metadata for the current node.
+    ///
+    /// Returns an error when there is no current node or the current node is not a choice node.
+    pub fn current_choices(&self, dialogue: &DialogueAsset) -> DialogueResult<Vec<RuntimeChoice>> {
+        let node_id = self.current_node_id.ok_or(DialogueError::NoCurrentNode)?;
+        let current_node = dialogue
+            .graph
+            .get_node(node_id)
+            .ok_or(DialogueError::NodeNotFound(node_id))?;
+
+        if !matches!(current_node, DialogueNode::Choice { .. }) {
+            return Err(DialogueError::GraphError(format!(
+                "Current node {:?} is not a choice node",
+                node_id
+            )));
+        }
+
+        Ok(dialogue
+            .graph
+            .get_outgoing_connections(node_id)
+            .into_iter()
+            .enumerate()
+            .map(|(index, (target, data))| RuntimeChoice {
+                index,
+                label: data.label,
+                choice_key: data.choice_key,
+                target,
+            })
+            .collect())
     }
 
     /// Checks if the dialogue has finished.

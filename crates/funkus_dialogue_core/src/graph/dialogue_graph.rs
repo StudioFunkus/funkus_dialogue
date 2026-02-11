@@ -22,7 +22,7 @@ use petgraph::algo;
 use petgraph::stable_graph::{NodeIndex as StableNodeIndex, StableDiGraph};
 use petgraph::visit::{EdgeRef, IntoNodeReferences};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::ConnectionData;
 use super::node::NodeId;
@@ -68,6 +68,8 @@ impl Serialize for DialogueGraph {
             #[serde(skip_serializing_if = "Option::is_none")]
             prompt: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
+            presentation_key: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
             speaker: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             portrait: Option<String>,
@@ -82,6 +84,8 @@ impl Serialize for DialogueGraph {
             from: NodeId,
             to: NodeId,
             label: Option<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            choice_key: Option<String>,
             #[serde(skip_serializing_if = "Option::is_none")]
             order: Option<u32>,
         }
@@ -100,18 +104,27 @@ impl Serialize for DialogueGraph {
         for index in self.graph.node_indices() {
             if let Some(node) = self.graph.node_weight(index) {
                 let node_id = NodeId::from_index(index);
-                let (node_type, text, prompt, effect, message) = match node {
+                let (node_type, text, prompt, presentation_key, effect, message) = match node {
                     DialogueNode::Text { text, .. } => {
-                        ("Text", Some(text.clone()), None, None, None)
+                        ("Text", Some(text.clone()), None, None, None, None)
                     }
-                    DialogueNode::Choice { prompt, .. } => {
-                        ("Choice", None, prompt.clone(), None, None)
-                    }
+                    DialogueNode::Choice {
+                        prompt,
+                        presentation_key,
+                        ..
+                    } => (
+                        "Choice",
+                        None,
+                        prompt.clone(),
+                        presentation_key.clone(),
+                        None,
+                        None,
+                    ),
                     DialogueNode::Effect { effect } => {
-                        ("Effect", None, None, Some(effect.clone()), None)
+                        ("Effect", None, None, None, Some(effect.clone()), None)
                     }
                     DialogueNode::Message { message } => {
-                        ("Message", None, None, None, Some(message.clone()))
+                        ("Message", None, None, None, None, Some(message.clone()))
                     }
                 };
                 let (speaker, portrait) = match node {
@@ -129,6 +142,7 @@ impl Serialize for DialogueGraph {
                     id: node_id,
                     text,
                     prompt,
+                    presentation_key,
                     speaker,
                     portrait,
                     effect,
@@ -141,14 +155,17 @@ impl Serialize for DialogueGraph {
             if let Some((from_idx, to_idx)) = self.graph.edge_endpoints(edge) {
                 let from = NodeId::from_index(from_idx);
                 let to = NodeId::from_index(to_idx);
-                let (label, order) = self
+                let (label, choice_key, order) = self
                     .graph
                     .edge_weight(edge)
-                    .map_or((None, None), |data| (data.label.clone(), data.order));
+                    .map_or((None, None, None), |data| {
+                        (data.label.clone(), data.choice_key.clone(), data.order)
+                    });
                 connections.push(SerialConnection {
                     from,
                     to,
                     label,
+                    choice_key,
                     order,
                 });
             }
@@ -184,6 +201,8 @@ impl<'de> Deserialize<'de> for DialogueGraph {
             id: NodeId,
             text: Option<String>,
             prompt: Option<String>,
+            #[serde(default)]
+            presentation_key: Option<String>,
             speaker: Option<String>,
             portrait: Option<String>,
             effect: Option<DialogueEffect>,
@@ -195,6 +214,8 @@ impl<'de> Deserialize<'de> for DialogueGraph {
             from: NodeId,
             to: NodeId,
             label: Option<String>,
+            #[serde(default)]
+            choice_key: Option<String>,
             #[serde(default)]
             order: Option<u32>,
         }
@@ -221,6 +242,9 @@ impl<'de> Deserialize<'de> for DialogueGraph {
                     let mut choice = DialogueNode::choice();
                     if let Some(prompt) = node_data.prompt {
                         let _ = choice.set_prompt(prompt);
+                    }
+                    if let Some(presentation_key) = node_data.presentation_key {
+                        let _ = choice.set_presentation_key(presentation_key);
                     }
                     choice
                 }
@@ -263,6 +287,11 @@ impl<'de> Deserialize<'de> for DialogueGraph {
                 let data = ConnectionData::new(conn.label.clone());
                 let data = if let Some(order) = conn.order {
                     data.with_order(order)
+                } else {
+                    data
+                };
+                let data = if let Some(choice_key) = conn.choice_key {
+                    data.with_choice_key(choice_key)
                 } else {
                     data
                 };
@@ -384,6 +413,38 @@ impl DialogueGraph {
             }
         }
 
+        self.validate_choice_connection_metadata()?;
+
+        Ok(())
+    }
+
+    fn validate_choice_connection_metadata(&self) -> Result<(), String> {
+        for (idx, node) in self.graph.node_references() {
+            if !matches!(node, DialogueNode::Choice { .. }) {
+                continue;
+            }
+
+            let node_id = NodeId::from_index(idx);
+            let mut seen: HashSet<String> = HashSet::new();
+            for (_, data) in self.get_connections(node_id) {
+                let Some(choice_key) = data.choice_key.as_deref() else {
+                    continue;
+                };
+
+                let trimmed = choice_key.trim();
+                if trimmed.is_empty() {
+                    return Err(format!("Choice node {:?} has an empty choice_key", node_id));
+                }
+
+                if !seen.insert(trimmed.to_string()) {
+                    return Err(format!(
+                        "Choice node {:?} has duplicate choice_key '{}'",
+                        node_id, trimmed
+                    ));
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -393,6 +454,14 @@ impl DialogueGraph {
     /// Connections are sorted by their explicit `order` field (ascending), falling back to node id
     /// for ties. If you need a different ordering, sort the results yourself.
     pub fn get_connected_nodes(&self, id: NodeId) -> Vec<(NodeId, Option<String>)> {
+        self.get_outgoing_connections(id)
+            .into_iter()
+            .map(|(target, data)| (target, data.label))
+            .collect()
+    }
+
+    /// Returns all outward connections from the supplied node in stable order with full metadata.
+    pub fn get_outgoing_connections(&self, id: NodeId) -> Vec<(NodeId, ConnectionData)> {
         let mut connections = self.get_connections(id);
         connections.sort_by(|(a_id, a_data), (b_id, b_data)| {
             let a_order = a_data.order.unwrap_or(u32::MAX);
@@ -403,7 +472,7 @@ impl DialogueGraph {
         });
         connections
             .into_iter()
-            .map(|(target, data)| (target, data.label.clone()))
+            .map(|(target, data)| (target, data.clone()))
             .collect()
     }
 
@@ -522,6 +591,28 @@ impl DialogueGraph {
         Err(format!("No connection from {:?} to {:?}", from, to))
     }
 
+    /// Updates the semantic key for a connection between two nodes.
+    ///
+    /// Returns an error if no connection exists.
+    pub fn update_connection_choice_key(
+        &mut self,
+        from: NodeId,
+        to: NodeId,
+        choice_key: Option<String>,
+    ) -> Result<(), String> {
+        let from_idx = self.require_index(from)?;
+        let to_idx = self.require_index(to)?;
+
+        if let Some(edge_id) = self.graph.find_edge(from_idx, to_idx) {
+            if let Some(data) = self.graph.edge_weight_mut(edge_id) {
+                data.choice_key = choice_key;
+                return Ok(());
+            }
+        }
+
+        Err(format!("No connection from {:?} to {:?}", from, to))
+    }
+
     /// Reorders outgoing connections for a node using the provided target ordering.
     ///
     /// Every outgoing connection from `from` must be represented exactly once in
@@ -620,7 +711,13 @@ mod tests {
     fn build_sample_graph() -> (DialogueGraph, NodeId, NodeId, NodeId, NodeId) {
         let mut graph = DialogueGraph::new().with_name("Sample");
         let start = graph.add_node(DialogueNode::text("Start").with_speaker("Guide"));
-        let choice = graph.add_node(DialogueNode::choice().with_prompt("Pick one").unwrap());
+        let choice = graph.add_node(
+            DialogueNode::choice()
+                .with_prompt("Pick one")
+                .unwrap()
+                .with_presentation_key("inline_badges")
+                .unwrap(),
+        );
         let branch_a = graph.add_node(DialogueNode::text("A"));
         let branch_b = graph.add_node(DialogueNode::text("B"));
 
@@ -628,10 +725,18 @@ mod tests {
             .connect(start, choice, ConnectionData::new(None))
             .unwrap();
         graph
-            .connect(choice, branch_a, ConnectionData::new(Some("A".into())))
+            .connect(
+                choice,
+                branch_a,
+                ConnectionData::new(Some("A".into())).with_choice_key("a"),
+            )
             .unwrap();
         graph
-            .connect(choice, branch_b, ConnectionData::new(Some("B".into())))
+            .connect(
+                choice,
+                branch_b,
+                ConnectionData::new(Some("B".into())).with_choice_key("b"),
+            )
             .unwrap();
         graph.set_start_node(start).unwrap();
 
@@ -744,12 +849,53 @@ mod tests {
 
     #[test]
     fn serialization_round_trip_preserves_structure() {
-        let (graph, _, _, _, _) = build_sample_graph();
+        let (graph, _, choice, _, _) = build_sample_graph();
         let json = serde_json::to_string(&graph).unwrap();
         let restored: DialogueGraph = serde_json::from_str(&json).unwrap();
 
         assert_eq!(graph.node_count(), restored.node_count());
         assert_eq!(graph.name, restored.name);
         assert_eq!(graph.start_node.is_some(), restored.start_node.is_some());
+
+        let restored_choice = restored
+            .get_node(choice)
+            .expect("choice node should survive round trip");
+        assert_eq!(
+            restored_choice.presentation_key(),
+            Some("inline_badges"),
+            "choice presentation key should survive round trip"
+        );
+
+        let restored_connections = restored.get_outgoing_connections(choice);
+        assert_eq!(restored_connections.len(), 2);
+        assert_eq!(
+            restored_connections[0].1.choice_key.as_deref(),
+            Some("a"),
+            "choice connection key should survive round trip"
+        );
+    }
+
+    #[test]
+    fn validation_rejects_duplicate_choice_keys_on_single_choice_node() {
+        let (mut graph, _, choice, _, branch_b) = build_sample_graph();
+        let branch_c = graph.add_node(DialogueNode::text("C"));
+        graph
+            .connect(
+                choice,
+                branch_c,
+                ConnectionData::new(Some("C".into())).with_choice_key("b"),
+            )
+            .expect("connect duplicate choice key");
+        graph
+            .connect(branch_b, branch_c, ConnectionData::new(None))
+            .expect("keep branch reachable");
+
+        let error = graph
+            .validate()
+            .expect_err("duplicate keys should fail validation");
+        assert!(
+            error.contains("duplicate choice_key"),
+            "unexpected error message: {error}"
+        );
     }
 }
