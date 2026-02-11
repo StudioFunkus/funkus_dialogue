@@ -360,7 +360,7 @@ fn handle_editor_io_commands(
     for command in command_reader.read().cloned() {
         match command {
             EditorCommand::LoadDialogueFromPath { path } => {
-                let mut resolved_path = path.clone();
+                let mut resolved_path = asset_browser.to_absolute_dialogue_path(&path);
                 if !asset_browser.is_within_dialogue_root(&resolved_path) {
                     match asset_browser.import_into_dialogue_root(&resolved_path) {
                         Ok(imported) => {

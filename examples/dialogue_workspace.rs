@@ -304,7 +304,6 @@ fn spawn_custom_overlay_ui(commands: &mut Commands) -> Entity {
 fn preview_input(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     preview: Res<PreviewContext>,
-    mut advance_events: MessageWriter<AdvanceDialogue>,
     mut select_events: MessageWriter<SelectDialogueChoice>,
     mut stop_events: MessageWriter<StopDialogue>,
     dialogue_assets: Res<Assets<DialogueAsset>>,
@@ -319,10 +318,6 @@ fn preview_input(
 
     if keyboard_input.just_pressed(KeyCode::Escape) {
         stop_events.write(StopDialogue { entity });
-    }
-
-    if keyboard_input.just_pressed(KeyCode::Space) && runner.state == DialogueState::ShowingText {
-        advance_events.write(AdvanceDialogue { entity });
     }
 
     let Some(dialogue) = dialogue_assets.get(&runner.dialogue_handle) else {
@@ -433,7 +428,7 @@ fn action_overlay_input(
         _ => 0,
     };
 
-    if keyboard_input.just_pressed(KeyCode::ArrowLeft) {
+    if keyboard_input.just_pressed(KeyCode::ArrowUp) {
         let next = if current_index == 0 {
             choices.len() - 1
         } else {
@@ -445,7 +440,7 @@ fn action_overlay_input(
         });
     }
 
-    if keyboard_input.just_pressed(KeyCode::ArrowRight) {
+    if keyboard_input.just_pressed(KeyCode::ArrowDown) {
         let next = (current_index + 1) % choices.len();
         select_events.write(SelectDialogueChoice {
             entity,
@@ -454,9 +449,19 @@ fn action_overlay_input(
     }
 
     let confirm_pressed = keyboard_input.just_pressed(KeyCode::Enter)
-        || keyboard_input.just_pressed(KeyCode::NumpadEnter);
-    if confirm_pressed && matches!(runner.state, DialogueState::ChoiceSelected(_)) {
+        || keyboard_input.just_pressed(KeyCode::NumpadEnter)
+        || keyboard_input.just_pressed(KeyCode::Space);
+    if !confirm_pressed {
+        return;
+    }
+
+    if matches!(runner.state, DialogueState::ChoiceSelected(_)) {
         advance_events.write(AdvanceDialogue { entity });
+    } else {
+        select_events.write(SelectDialogueChoice {
+            entity,
+            choice_index: current_index,
+        });
     }
 }
 
@@ -511,7 +516,7 @@ fn update_action_overlay_ui(
     let mut lines = vec![
         "Action Overlay (custom presentation)".to_string(),
         prompt,
-        "Pick with 1/2/3, or Arrow Left/Right + Enter".to_string(),
+        "Pick with 1/2/3, or Arrow Up/Down + Enter/Space".to_string(),
     ];
     for choice in choices {
         let label = choice

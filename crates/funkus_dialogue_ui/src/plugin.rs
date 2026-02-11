@@ -1,4 +1,6 @@
 use bevy::ecs::schedule::common_conditions::on_message;
+use bevy::input_focus::InputDispatchPlugin;
+use bevy::input_focus::directional_navigation::DirectionalNavigationPlugin;
 use bevy::prelude::*;
 use funkus_dialogue_core::{
     DialogueChoicePresentation, DialogueChoicePresentationAppExt, DialogueEnded, DialogueStarted,
@@ -32,13 +34,22 @@ pub struct DialogueUIPlugin;
 
 impl Plugin for DialogueUIPlugin {
     fn build(&self, app: &mut App) {
+        if !app.is_plugin_added::<InputDispatchPlugin>() {
+            app.add_plugins(InputDispatchPlugin);
+        }
+        if !app.is_plugin_added::<DirectionalNavigationPlugin>() {
+            app.add_plugins(DirectionalNavigationPlugin);
+        }
+
         app.register_choice_presentation::<InlineBadgesChoicePresentation>()
+            .init_resource::<systems::DialogueUiChoiceRenderCache>()
             .init_resource::<systems::DialogueUiLifecycleState>()
             .add_systems(
                 Update,
                 (
                     systems::unmount_dialogue_ui_on_end.run_if(on_message::<DialogueEnded>),
                     systems::mount_dialogue_ui_on_start.run_if(on_message::<DialogueStarted>),
+                    systems::reconcile_dialogue_ui_on_runner_removed,
                     systems::display_dialogue,
                     systems::default_choice_input,
                 )

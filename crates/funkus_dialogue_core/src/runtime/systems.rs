@@ -466,6 +466,7 @@ pub fn setup_dialogue_systems(app: &mut App) {
                 handle_stop_dialogue_events,
                 handle_advance_dialogue_events,
                 handle_select_dialogue_events,
+                apply_dialogue_actions,
             )
                 .chain()
                 .in_set(DialogueSystemSet),
@@ -495,7 +496,9 @@ mod tests {
         DialogueEffect, DialogueMessageCall, DialogueMessageRegistryPlugin, DialogueOperation,
         DialogueRegistry, DialogueValue,
     };
-    use crate::runtime::{DialogueRunner, DialogueState, setup_dialogue_systems};
+    use crate::runtime::{
+        DialogueRunner, DialogueState, DialogueSystemSet, setup_dialogue_systems,
+    };
 
     #[derive(Resource, Reflect, crate::DialogueResource, Default)]
     #[dialogue(key = "runtime_test")]
@@ -523,6 +526,11 @@ mod tests {
     #[derive(Resource, Default)]
     struct DeferredStartSent(bool);
 
+    #[derive(Resource, Default)]
+    struct RuntimeUpdateCapture {
+        value_after_dialogue_set: Option<i32>,
+    }
+
     fn queue_start_with_deferred_spawn(
         mut commands: Commands,
         mut sent: ResMut<DeferredStartSent>,
@@ -544,6 +552,13 @@ mod tests {
             entity,
             dialogue_handle: handle.0.clone(),
         });
+    }
+
+    fn capture_runtime_value_after_dialogue_set(
+        runtime_state: Res<RuntimeTestState>,
+        mut capture: ResMut<RuntimeUpdateCapture>,
+    ) {
+        capture.value_after_dialogue_set = Some(runtime_state.value);
     }
 
     fn init_runtime_test_app() -> App {
@@ -1035,5 +1050,71 @@ mod tests {
         };
         assert_eq!(started_after_first_update.len(), 1);
         assert_eq!(started_after_first_update[0].start_node_id, start);
+    }
+
+    #[test]
+    fn update_systems_after_dialogue_set_observe_settle_side_effects() {
+        let mut app = init_runtime_test_app();
+        app.insert_resource(RuntimeTestState { value: 1 });
+        app.init_resource::<RuntimeUpdateCapture>();
+        app.add_systems(
+            Update,
+            capture_runtime_value_after_dialogue_set.after(DialogueSystemSet),
+        );
+
+        {
+            let app_type_registry = app.world_mut().resource_mut::<AppTypeRegistry>();
+            let mut type_registry = app_type_registry.write();
+            type_registry.register::<RuntimeTestState>();
+        }
+
+        app.world_mut()
+            .resource_mut::<DialogueRegistry>()
+            .register_reflected_resource(
+                <RuntimeTestState as bevy::reflect::Typed>::type_info(),
+                <RuntimeTestState as crate::registry::DialogueResource>::resource_key(),
+            );
+
+        let mut graph = DialogueGraph::new();
+        let start = graph.add_node(DialogueNode::text("Start"));
+        let effect = graph.add_node(DialogueNode::effect(DialogueEffect {
+            key: "runtime_test.value".to_string(),
+            op: DialogueOperation::Add,
+            value: DialogueValue::Int(2),
+        }));
+        let end = graph.add_node(DialogueNode::text("End"));
+        graph
+            .connect(start, effect, ConnectionData::new(None))
+            .expect("connect start->effect");
+        graph
+            .connect(effect, end, ConnectionData::new(None))
+            .expect("connect effect->end");
+        graph.set_start_node(start).expect("set start");
+
+        let handle = app
+            .world_mut()
+            .resource_mut::<Assets<DialogueAsset>>()
+            .add(DialogueAsset::new(graph));
+        let entity = app.world_mut().spawn(DialogueRunner::default()).id();
+
+        app.world_mut()
+            .resource_mut::<Messages<StartDialogue>>()
+            .write(StartDialogue {
+                entity,
+                dialogue_handle: handle,
+            });
+        app.update();
+
+        app.world_mut()
+            .resource_mut::<RuntimeUpdateCapture>()
+            .value_after_dialogue_set = None;
+
+        app.world_mut()
+            .resource_mut::<Messages<AdvanceDialogue>>()
+            .write(AdvanceDialogue { entity });
+        app.update();
+
+        let capture = app.world().resource::<RuntimeUpdateCapture>();
+        assert_eq!(capture.value_after_dialogue_set, Some(3));
     }
 }

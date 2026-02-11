@@ -11,7 +11,8 @@
         "type": "Choice",
         "id": 2,
         "prompt": "What would you like to know about?",
-        "speaker": "Guide"
+        "speaker": "Guide",
+        "portrait": "dialogue/portraits/placeholder.png"
       },
       {
         "type": "Text",
@@ -23,7 +24,8 @@
         "type": "Text",
         "id": 4,
         "text": "The system supports text nodes for narration and choice nodes for player decisions. More types like conditions are planned!",
-        "speaker": "Guide"
+        "speaker": "Guide",
+        "portrait": "dialogue/portraits/placeholder.png"
       },
       {
         "type": "Effect",
@@ -181,7 +183,8 @@
         "id": 15,
         "prompt": "Test actions (page 1)",
         "presentation_key": "inline_badges",
-        "speaker": "Guide"
+        "speaker": "Guide",
+        "portrait": "dialogue/portraits/placeholder.png"
       },
       {
         "type": "Choice",

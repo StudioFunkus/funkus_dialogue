@@ -565,6 +565,38 @@ impl DialogueRunner {
             .collect())
     }
 
+    /// Returns the currently selected choice index, if any.
+    #[must_use]
+    pub fn selected_choice_index(&self) -> Option<usize> {
+        let DialogueState::ChoiceSelected(index) = self.state else {
+            return None;
+        };
+        Some(index)
+    }
+
+    /// Returns the selected choice index clamped to the available choice count.
+    #[must_use]
+    pub fn clamped_selected_choice_index(&self, choice_count: usize) -> Option<usize> {
+        if choice_count == 0 {
+            return None;
+        }
+        Some(self.selected_choice_index()?.min(choice_count - 1))
+    }
+
+    /// Returns a stable selection index for the current choice set.
+    ///
+    /// If no choice is selected yet, this returns `0`.
+    #[must_use]
+    pub fn preferred_choice_index(&self, choice_count: usize) -> Option<usize> {
+        if choice_count == 0 {
+            return None;
+        }
+        Some(
+            self.clamped_selected_choice_index(choice_count)
+                .unwrap_or(0),
+        )
+    }
+
     /// Checks if the dialogue has finished.
     ///
     /// # Returns

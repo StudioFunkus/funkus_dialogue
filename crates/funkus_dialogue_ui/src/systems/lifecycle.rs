@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use bevy::prelude::*;
-use funkus_dialogue_core::{DialogueEnded, DialogueStarted};
+use funkus_dialogue_core::{DialogueEnded, DialogueRunner, DialogueStarted};
 
 use crate::components::DialogueDisplay;
 use crate::layout::spawn_dialogue_ui;
@@ -60,10 +60,34 @@ pub fn unmount_dialogue_ui_on_end(
     }
 }
 
+pub fn reconcile_dialogue_ui_on_runner_removed(
+    mut commands: Commands,
+    mut removed_runners: RemovedComponents<DialogueRunner>,
+    mut lifecycle: ResMut<DialogueUiLifecycleState>,
+    managed_roots: Query<Entity, With<ManagedDialogueUiRoot>>,
+) {
+    let mut removed_active_dialogue = false;
+    for entity in removed_runners.read() {
+        removed_active_dialogue |= lifecycle.active_dialogues.remove(&entity);
+    }
+
+    if !removed_active_dialogue || !lifecycle.active_dialogues.is_empty() {
+        return;
+    }
+
+    for root in &managed_roots {
+        commands
+            .entity(root)
+            .despawn_related::<Children>()
+            .despawn();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use bevy::ecs::message::Messages;
     use bevy::ecs::schedule::common_conditions::on_message;
+    use funkus_dialogue_core::DialogueRunner;
 
     use super::*;
 
@@ -129,5 +153,46 @@ mod tests {
         app.update();
 
         assert!(app.world().get_entity(manual).is_ok());
+    }
+
+    #[test]
+    fn unmounts_managed_root_when_runner_is_removed_without_end_message() {
+        let mut app = App::new();
+        app.add_message::<DialogueStarted>()
+            .init_resource::<DialogueUiLifecycleState>()
+            .add_systems(
+                Update,
+                (
+                    mount_dialogue_ui_on_start.run_if(on_message::<DialogueStarted>),
+                    reconcile_dialogue_ui_on_runner_removed,
+                )
+                    .chain(),
+            );
+
+        let runner = app.world_mut().spawn(DialogueRunner::default()).id();
+        app.world_mut()
+            .resource_mut::<Messages<DialogueStarted>>()
+            .write(DialogueStarted {
+                entity: runner,
+                start_node_id: funkus_dialogue_core::NodeId::from_raw(1),
+            });
+        app.update();
+
+        let managed_root_count_after_start = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<Entity, With<ManagedDialogueUiRoot>>();
+            query.iter(world).count()
+        };
+        assert_eq!(managed_root_count_after_start, 1);
+
+        app.world_mut().entity_mut(runner).despawn();
+        app.update();
+
+        let managed_root_count_after_despawn = {
+            let world = app.world_mut();
+            let mut query = world.query_filtered::<Entity, With<ManagedDialogueUiRoot>>();
+            query.iter(world).count()
+        };
+        assert_eq!(managed_root_count_after_despawn, 0);
     }
 }

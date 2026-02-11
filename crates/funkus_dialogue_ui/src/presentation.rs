@@ -7,16 +7,6 @@ pub(crate) enum ChoicePresentationMode {
     External,
 }
 
-impl ChoicePresentationMode {
-    #[must_use]
-    pub(crate) fn supports_builtin_input(self) -> bool {
-        matches!(
-            self,
-            ChoicePresentationMode::StandardList | ChoicePresentationMode::InlineBadges
-        )
-    }
-}
-
 #[must_use]
 pub(crate) fn resolve_choice_presentation(key: Option<&str>) -> ChoicePresentationMode {
     match key {
