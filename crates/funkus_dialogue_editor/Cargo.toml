@@ -12,8 +12,8 @@ name = "funkus_dialogue_editor"
 path = "src/lib.rs"
 
 [dependencies]
-bevy = "0.18"
-bevy_egui = "0.39"
+bevy = { version = "0.18", default-features = false, features = ["default_app", "default_platform", "ui_api", "ui_bevy_render", "picking"] }
+bevy_egui = { version = "0.39", default-features = false, features = ["render", "bevy_ui", "picking", "default_fonts", "manage_clipboard", "open_url"] }
 egui-snarl = "0.9"
 funkus_dialogue_core = { path = "../funkus_dialogue_core", version = "0.1.0" }
 ron = "0.8"
